@@ -23,7 +23,7 @@ __all__ = ["KEYMAP", "GAIN_EPADU", "RONOISE_E", "USEFUL_KEYS",
            "Gfit2hist", "bias2ronoise"]
 
 KEYMAP = {"EXPTIME": 'EXPOS', "GAIN": 'EGAIN', "OBJECT": 'OBJECT',
-          "FILTER": 'FILTER', "DATE-OBS": 'DATE', "RONOISE": None}
+          "FILTER": 'FILTER', "DATE-OBS": 'DATE', "RDNOISE": None}
 
 USEFUL_KEYS = ["EXPTIME", "FILTER", "DATE-OBS", "LONGITUD", "LATITUDE",
                "OBJECT", "EPOCH", "RA", "DEC"]
