@@ -56,7 +56,14 @@ class Preprocessor():
         '''
         newpaths = []
         for fpath in self.rawpaths:
-            # # If it is TL image (e.g., ``g.fits``), delete it
+            # If it is TL image (e.g., ``g.fits``), delete it
+            try:
+                counter = fpath.name.split('_')[1][:4]
+
+            except IndexError:
+                print(f"{fpath.name} is not a regular TRIPOL FITS file. "
+                      + "Maybe a TL image.")
+                continue
 
             # Set the airmass and Alt-Az coordinates:
             # This is done outside of TRIPOL computer since it takes too much
@@ -104,14 +111,7 @@ class Preprocessor():
 
             # Add counter if there is none:
             if "COUNTER" not in hdr:
-                try:
-                    counter = fpath.name.split('_')[1][:4]
-                    cards.append("COUNTER", fpath.name.split('_')[1][:4],
-                                 "Image counter")
-                except IndexError:
-                    print(f"{fpath.name} is not a regular TRIPOL FITS file. "
-                          + "Maybe a TL image.")
-                    pass
+                cards.append("COUNTER", counter, "Image counter")
 
             # Add polarimetry-key (RET-ANG1) if there is none:
             if "RET-ANG1" not in hdr:
