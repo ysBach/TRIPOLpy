@@ -194,6 +194,14 @@ class Preprocessor():
             except:
                 raise ValueError("Maybe files not 'organize'd yet?")
 
+        if comb_kwargs is None:
+            comb_kwargs = dict(overwrite=True,
+                               unit=None,
+                               dtype='float32',
+                               combine_method="median",
+                               reject_method=None,
+                               combine_uncertainty_function=None)
+
         if group_by is None:
             group_by = []
         elif exposure_key not in group_by:
@@ -210,23 +218,6 @@ class Preprocessor():
 
         darkdir = Path(darkdir)
         mkdir(darkdir)
-
-        # if self.renamed:
-        #     fitspaths = self.newpaths
-        # else:
-        #     warnings.warn("Maybe FITS files have not yet renamed..? "
-        #                   + f"Using ({self.toppath}).glob('*.fits')")
-        #     fitspaths = self.rawpaths
-
-
-        if comb_kwargs is None:
-            comb_kwargs = dict(overwrite=True,
-                               unit=None,
-                               dtype='float32',
-                               combine_method="median",
-                               reject_method=None,
-                               combine_uncertainty_function=None)
-
 
         darktab = self.summary[self.summary[dark_key] == dark_val]
         darkgroups = darktab.group_by(group_by)
@@ -306,9 +297,50 @@ class Preprocessor():
         self.darkpaths = darkpaths
 
 
-    def make_flat(self, flatdir=None, comb_keys=None, polarimetry=False,
-                  hwpkey=None):
-        pass
+    # TRIPOL specific
+    def make_flat(self, flatdir=None, comb_kwargs=None, flat_key="OBJECT",
+                  flat_startswith="flat", flat_key_delimiter='_',
+                  flat_key_info=["OBJECT", "FILTER", "HWPANGLE"],
+                  polarimetry=False, hwpkey=None):
+        '''
+        Flat image must have the header key ``flat_key`` *starting* with the
+        ``flat_startswith``. By default, it seeks for
+        ``OBJECT = flat_<FILTER>_<HWPANGLE>``.
+
+        '''
+
+        # Initial settings
+        if self.summary is None:
+            try:
+                self.summary = Table.read(self.toppath / "summary.csv",
+                                          format='ascii.csv')
+                self.newpaths = self.summary["file"].tolist()
+            except:
+                raise ValueError("Maybe files not 'organize'd yet?")
+
+        if comb_kwargs is None:
+            comb_kwargs = dict(overwrite=True,
+                               unit=None,
+                               dtype='float32',
+                               combine_method="median",
+                               reject_method=None,
+                               combine_uncertainty_function=None)
+
+        if flatdir is None:
+            flatdir = '.'
+
+        flatdir = Path(flatdir)
+        mkdir(flatdir)
+
+        allgroups = self.summary.group_by(flat_key)
+
+        for group in allgroups.groups:
+            obj = group[flat_key][0]
+            if obj.startswith(flat_startswith):
+                info = obj.split(flat_key_delimiter)
+
+
+
         # """ Make flats for each filter and hwp angle.
         # """
         # # Initial settings
