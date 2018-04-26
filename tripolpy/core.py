@@ -6,7 +6,7 @@ from scipy.stats import itemfreq
 
 from astropy.io import fits
 from astropy import units as u
-from astropy.coordinates import EarthLocation, AltAz, SkyCoord, ICRS
+from astropy.coordinates import EarthLocation, AltAz, SkyCoord
 from astropy.time import Time
 from astropy.table import Table, Column
 from astropy.nddata import CCDData

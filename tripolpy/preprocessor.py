@@ -20,7 +20,7 @@ class Preprocessor():
         self.biaspaths = None
         self.flatpaths = None
         self.darkpaths = None
-        self.renamed = False
+        # self.renamed = False
         # rawpaths: Original file paths
         # newpaths: Renamed paths
         # redpaths: Reduced frames paths excluding BDF
@@ -56,52 +56,46 @@ class Preprocessor():
         '''
         newpaths = []
         for fpath in self.rawpaths:
-            # If it is TL image (e.g., ``g.fits``), delete it
-            try:
-                counter = fpath.name.split('_')[1][:4]
+            # # If it is TL image (e.g., ``g.fits``), delete it
+            # try:
+            #     counter = fpath.name.split('_')[1][:4]
 
-            except IndexError:
-                print(f"{fpath.name} is not a regular TRIPOL FITS file. "
-                      + "Maybe a TL image.")
-                continue
-
-            # Set the ``COUNTER`` keyword
-            counter = fpath.name.split('_')[1][:4]
+            # except IndexError:
+            #     print(f"{fpath.name} is not a regular TRIPOL FITS file. "
+            #           + "Maybe a TL image.")
+            #     continue
 
             # Set the airmass and Alt-Az coordinates:
+            # This is done outside of TRIPOL computer since it takes too much
+            # time on that computer...
             hdr = fits.getheader(fpath)
+            if hdr["OBJECT"].lower()[:4] not in ['bias', 'dark', 'flat']:
+                am, full = airmass_hdr(hdr,
+                                       frame='icrs',
+                                       full=True)
 
-            am, full = airmass_hdr(hdr,
-                                   frame='icrs',
-                                   equinox='J2000',
-                                   exptime_key=KEYMAP["EXPTIME"],
-                                   ut_key=KEYMAP["DATE-OBS"],
-                                   full=True)
-
-            cards = [fits.Card("BUNIT", "ADU"),
-                     fits.Card("Counter", counter, "Image number"),
-                     fits.Card("AIRMASS", am, "average airmass"),
-                     fits.Card("ALT", full["alt"][0],
-                               "Altitude at the start of the exposure"),
-                     fits.Card("AZ", full["az"][0],
-                               "Azimuth at the start of the exposure"),
-                     fits.Card("ALT_MID", full["alt"][1],
-                               "Altitude at the midpoint of the exposure"),
-                     fits.Card("AZ_MID", full["az"][1],
-                               "Azimuth at the midpoint of the exposure"),
-                     fits.Card("ALT_END", full["alt"][2],
-                               "Altitude at the end of the exposure"),
-                     fits.Card("AZ_END", full["az"][2],
-                               "Azimuth at the end of the exposure"),
-                     fits.Card("HISTORY", "ALT-AZ calculated from TRIPOLpy."),
-                     fits.Card("HISTORY", ("AIRMASS calculated from TRIPOLpy.")),
-                     fits.Card("COMMENT", ("TRIPOLpy's airmass calculation uses "
-                                           + "the same algorithm as IRAF: From "
-                                           + "'Some Factors Affecting the "
-                                           + "Accuracy of Stellar Photometry "
-                                           + "with CCDs' by P. Stetson, DAO "
-                                           + "preprint, September 1988."))
-                    ]
+                cards = [fits.Card("AIRMASS", am, "average airmass"),
+                         fits.Card("ALT", full["alt"][0],
+                                   "Altitude at the start of the exposure"),
+                         fits.Card("AZ", full["az"][0],
+                                   "Azimuth at the start of the exposure"),
+                         fits.Card("ALT_MID", full["alt"][1],
+                                   "Altitude at the midpoint of the exposure"),
+                         fits.Card("AZ_MID", full["az"][1],
+                                   "Azimuth at the midpoint of the exposure"),
+                         fits.Card("ALT_END", full["alt"][2],
+                                   "Altitude at the end of the exposure"),
+                         fits.Card("AZ_END", full["az"][2],
+                                   "Azimuth at the end of the exposure"),
+                         fits.Card("HISTORY", "ALT-AZ calculated from TRIPOLpy."),
+                         fits.Card("HISTORY", ("AIRMASS calculated from TRIPOLpy.")),
+                         fits.Card("COMMENT", ("TRIPOLpy's airmass calculation uses "
+                                               + "the same algorithm as IRAF: From "
+                                               + "'Some Factors Affecting the "
+                                               + "Accuracy of Stellar Photometry "
+                                               + "with CCDs' by P. Stetson, DAO "
+                                               + "preprint, September 1988."))
+                         ]
 
             # Add polarimetry-key (RET-ANG1) if there is none:
             if "RET-ANG1" not in hdr:
@@ -130,7 +124,6 @@ class Preprocessor():
             newpaths.append(newpath)
 
         self.newpaths = newpaths
-        self.renamed = True
         self.summary = make_summary(newpaths,
                                     output=self.toppath / "summary.csv",
                                     format='ascii.csv')

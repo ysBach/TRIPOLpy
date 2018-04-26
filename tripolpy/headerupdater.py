@@ -36,9 +36,9 @@ KEYORI = list(KEYMAP.values())
 KEYNEW = list(KEYMAP.keys())
 KEYMAP2 = dict(zip(KEYORI, KEYNEW))
 
-#%%
 # First, update the header keys accordingly:
-newlines = [f"counter = {counter} / Image counter"]
+newlines = [f"counter = {counter} / Image counter",
+            "bunit = 'ADU' / "]
 # cards = {}
 with open(tmphdrpath, 'r') as tmphdr:
     lines = tmphdr.read()
@@ -72,11 +72,12 @@ with open(tmphdrpath, 'r') as tmphdr:
             # cards[k_ori] = (v_ori, c_ori)
             newlines.append(line)
 
-
-newlines.append(
-    f"GAIN = {GAIN_EPADU[filt][LATEST]} / [e-/ADU] The electron gain factor ({LATEST}).")
-newlines.append(
-    f"RDNOISE = {RDNOISE_E[filt][LATEST]} / [e-] The (Gaussian) readout noise ({LATEST}).")
+# Appending at the last stage will overwrite the original value
+# when transformed into FITS header.
+newlines.append(f"GAIN = {GAIN_EPADU[filt][LATEST]} "
+                + f"/ [e-/ADU] The electron gain factor ({LATEST}).")
+newlines.append(f"RDNOISE = {RDNOISE_E[filt][LATEST]} "
+                + f"/ [e-] The (Gaussian) readout noise ({LATEST}).")
 
 with open(tmphdrpath, 'w+') as newhdr:
-  newhdr.write('\n'.join(newlines))
+    newhdr.write('\n'.join(newlines))
