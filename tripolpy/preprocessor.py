@@ -103,15 +103,15 @@ class Preprocessor():
                                            + "preprint, September 1988."))
                     ]
 
-            # Add polarimetry-key (HWPANGLE) if there is none:
-            if "HWPANGLE" not in hdr:
+            # Add polarimetry-key (RET-ANG1) if there is none:
+            if "RET-ANG1" not in hdr:
                 try:
                     hwpangle = float(hdr["OBJECT"].split('_')[-1])
                     if hwpangle > 180:
                         hwpangle = hwpangle / 10
                 except ValueError:
                     hwpangle = 0
-                hwp = fits.Card("HWPANGLE", hwpangle,
+                hwp = fits.Card("RET-ANG1", hwpangle,
                                 "The half-wave plate angle.")
                 cards.append(hwp)
 
@@ -339,6 +339,7 @@ class Preprocessor():
             if obj.startswith(flat_startswith):
                 info = obj.split(flat_key_delimiter)
 
+        pass
 
 
         # """ Make flats for each filter and hwp angle.

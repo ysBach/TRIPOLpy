@@ -270,7 +270,7 @@ def airmass_hdr(header, ra=None, dec=None, ut=None, exptime=None,
                 scale=750.,
                 ra_key="RA", dec_key="DEC", ut_key="DATE-OBS",
                 exptime_key="EXPTIME", lon_key="LONGITUD", lat_key="LATITUDE",
-                height_key="HEIGHT", equinox_key="EPOCH", frame_key="RADECSYS",
+                height_key="HEIGHT", equinox_key="EQUINOX", frame_key="RADECSYS",
                 ra_unit=u.hourangle, dec_unit=u.deg,
                 exptime_unit=u.s, lon_unit=u.deg, lat_unit=u.deg,
                 height_unit=u.m,
@@ -334,11 +334,9 @@ def airmass_hdr(header, ra=None, dec=None, ut=None, exptime=None,
     frame = _conversion(header, frame, frame_key)
 
     if ut is None:
-        ut = header[ut_key]
+        ut = Time(header[ut_key], format=ut_format, scale=ut_scale)
     elif isinstance(ut, Time):
         ut = ut.isot
-        ut_format = 'isot'
-        ut_scale = 'utc'
 
     targetcoord = SkyCoord(ra=ra,
                            dec=dec,
@@ -359,7 +357,7 @@ def airmass_hdr(header, ra=None, dec=None, ut=None, exptime=None,
     result = airmass_obs(targetcoord=targetcoord,
                          obscoord=observcoord,
                          ut=ut,
-                         exptime=exptime,
+                         exptime=exptime * exptime_unit,
                          scale=scale,
                          full=full)
 
