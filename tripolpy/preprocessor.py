@@ -74,7 +74,7 @@ class Preprocessor():
             # This is done outside of TRIPOL computer since it takes too much
             # time on that computer...
             hdr = fits.getheader(fpath)
-            if hdr["OBJECT"].lower()[:4] not in ['bias', 'dark']:
+            if hdr["OBJECT"].lower()[:4] not in ['bias', 'dark', 'test']:
                 # FYI: Flat may require airmass just for check (twilight/night)
                 try:
                     am, full = airmass_hdr(hdr,
