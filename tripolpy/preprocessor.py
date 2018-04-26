@@ -12,7 +12,7 @@ class Preprocessor():
     def __init__(self, toppath):
         self.toppath = toppath  # e.g., Path('180412', 'rawdata')
         self.filters = ['g', 'r', 'i']  # Actually g', r', and i' bands
-        self.rawpaths = list(self.toppath.glob('*.fits'))
+        self.rawpaths = list(Path(self.toppath).glob('*.fits'))
         self.ronoises = dict(g=None, r=None, i=None)
         self.newpaths = None
         self.summary = None
@@ -74,7 +74,7 @@ class Preprocessor():
                                        frame='icrs',
                                        full=True)
 
-                cards = [fits.Card("AIRMASS", am, "average airmass"),
+                cards = [fits.Card("AIRMASS", am, "Aaverage airmass (Stetson 1988)"),
                          fits.Card("ALT", full["alt"][0],
                                    "Altitude at the start of the exposure"),
                          fits.Card("AZ", full["az"][0],

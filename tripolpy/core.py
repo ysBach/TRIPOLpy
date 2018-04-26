@@ -745,6 +745,10 @@ def make_summary(filelist, extension=0, fname_option='relative',
         ``keywords`` or ``'file'``, which sorts the table by the file name.
     """
 
+    if len(filelist) == 0:
+        print("No FITS file found.")
+        return
+
     def _get_fname(path):
         if fname_option == 'relative':
             return str(path)
