@@ -81,9 +81,9 @@ class Preprocessor():
                 continue
 
             amstr = ("TRIPOLpy's airmass calculation uses the same algorithm "
-                    + "as IRAF: From 'Some Factors Affecting the Accuracy of "
-                    + "Stellar Photometry with CCDs' by P. Stetson, DAO "
-                    + "preprint, September 1988.")
+                     + "as IRAF: From 'Some Factors Affecting the Accuracy of "
+                     + "Stellar Photometry with CCDs' by P. Stetson, DAO "
+                     + "preprint, September 1988.")
 
             # Set the airmass and Alt-Az coordinates:
             # This is done outside of TRIPOL computer since it takes too much
@@ -94,18 +94,18 @@ class Preprocessor():
                 # FYI: Flat may require airmass just for check (twilight/night)
                 try:
                     am, full = airmass_hdr(hdr,
-                                        ra_key="RA",
-                                        dec_key="DEC",
-                                        ut_key=KEYMAP["DATE-OBS"],
-                                        exptime_key=KEYMAP["EXPTIME"],
-                                        lon_key="LONGITUD",
-                                        lat_key="LATITUDE",
-                                        height_key="HEIGHT",
-                                        equinox="J2000",
-                                        frame='icrs',
-                                        full=True)
-
-                    cards.append(_cards_airmass(am, full))
+                                           ra_key="RA",
+                                           dec_key="DEC",
+                                           ut_key=KEYMAP["DATE-OBS"],
+                                           exptime_key=KEYMAP["EXPTIME"],
+                                           lon_key="LONGITUD",
+                                           lat_key="LATITUDE",
+                                           height_key="HEIGHT",
+                                           equinox="J2000",
+                                           frame='icrs',
+                                           full=True)
+                    amcards = _cards_airmass(am, full)
+                    [cards.append(c) for c in amcards]
                     hdr.add_history("ALT-AZ calculated from TRIPOLpy.")
                     hdr.add_history("AIRMASS calculated from TRIPOLpy.")
                     hdr.add_comment(amstr)
