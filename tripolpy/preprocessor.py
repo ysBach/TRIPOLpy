@@ -70,32 +70,49 @@ class Preprocessor():
             # time on that computer...
             hdr = fits.getheader(fpath)
             if hdr["OBJECT"].lower()[:4] not in ['bias', 'dark', 'flat']:
-                am, full = airmass_hdr(hdr,
-                                       frame='icrs',
-                                       full=True)
+                try:
+                    am, full = airmass_hdr(hdr,
+                                        ra_key="RA",
+                                        dec_key="DEC",
+                                        ut_key=KEYMAP["DATE-OBS"],
+                                        exptime_key=KEYMAP["EXPTIME"],
+                                        lon_key="LONGITUD",
+                                        lat_key="LATITUDE",
+                                        height_key="HEIGHT",
+                                        equinox="J2000",
+                                        frame='icrs',
+                                        full=True)
 
-                cards = [fits.Card("AIRMASS", am, "Aaverage airmass (Stetson 1988)"),
-                         fits.Card("ALT", full["alt"][0],
-                                   "Altitude at the start of the exposure"),
-                         fits.Card("AZ", full["az"][0],
-                                   "Azimuth at the start of the exposure"),
-                         fits.Card("ALT_MID", full["alt"][1],
-                                   "Altitude at the midpoint of the exposure"),
-                         fits.Card("AZ_MID", full["az"][1],
-                                   "Azimuth at the midpoint of the exposure"),
-                         fits.Card("ALT_END", full["alt"][2],
-                                   "Altitude at the end of the exposure"),
-                         fits.Card("AZ_END", full["az"][2],
-                                   "Azimuth at the end of the exposure"),
-                         fits.Card("HISTORY", "ALT-AZ calculated from TRIPOLpy."),
-                         fits.Card("HISTORY", ("AIRMASS calculated from TRIPOLpy.")),
-                         fits.Card("COMMENT", ("TRIPOLpy's airmass calculation uses "
-                                               + "the same algorithm as IRAF: From "
-                                               + "'Some Factors Affecting the "
-                                               + "Accuracy of Stellar Photometry "
-                                               + "with CCDs' by P. Stetson, DAO "
-                                               + "preprint, September 1988."))
-                         ]
+                    cards = [fits.Card("AIRMASS", am, "Aaverage airmass (Stetson 1988)"),
+                            fits.Card("ALT", full["alt"][0],
+                                    "Altitude at the start of the exposure"),
+                            fits.Card("AZ", full["az"][0],
+                                    "Azimuth at the start of the exposure"),
+                            fits.Card("ALT_MID", full["alt"][1],
+                                    "Altitude at the midpoint of the exposure"),
+                            fits.Card("AZ_MID", full["az"][1],
+                                    "Azimuth at the midpoint of the exposure"),
+                            fits.Card("ALT_END", full["alt"][2],
+                                    "Altitude at the end of the exposure"),
+                            fits.Card("AZ_END", full["az"][2],
+                                    "Azimuth at the end of the exposure"),
+                            fits.Card("HISTORY", "ALT-AZ calculated from TRIPOLpy."),
+                            fits.Card("HISTORY", ("AIRMASS calculated from TRIPOLpy.")),
+                            fits.Card("COMMENT", ("TRIPOLpy's airmass calculation uses "
+                                                + "the same algorithm as IRAF: From "
+                                                + "'Some Factors Affecting the "
+                                                + "Accuracy of Stellar Photometry "
+                                                + "with CCDs' by P. Stetson, DAO "
+                                                + "preprint, September 1988."))
+                            ]
+
+                except KeyError:
+                    pass
+
+            # Add counter if there is none:
+            if "COUNTER" not in hdr:
+                cards.append("COUNTER", fpath.name.split('_')[1][:4],
+                             "Image counter")
 
             # Add polarimetry-key (RET-ANG1) if there is none:
             if "RET-ANG1" not in hdr:

@@ -84,10 +84,34 @@ def fits_newpath(fpath, rename_by, mkdir_by=None, header=None, delimiter='_',
 
     return newpath
 
+def key_mapper(header, keymap, deprecation=False):
+    ''' Update the header to meed the standard (keymap).
+    Parameters
+    ----------
+    header: Header
+        The header to be modified
+    keymap: dict
+        The dictionary contains ``{<standard_key>:<original_key>}`` information
+
+    deprecation: bool, optional
+        Whether to change the original keywords' comments to contain deprecation
+        warning. If ``True``, the original keywords' comments will become
+        ``Deprecated. See <standard_key>.``.
+    '''
+    newhdr = header.copy()
+    for k, v in KEYMAP.items():
+        if (v is not None) and (k not in newhdr):
+            comment_ori = newhdr.comments[v]
+            newhdr[k] = (newhdr[v], comment_ori)
+            if deprecation:
+                newhdr.comments[v] = f"Deprecated. See {k}"
+    return newhdr
+
 
 
 def fitsrenamer(fpath=None, header=None, newtop=None, rename_by=["OBJECT"],
                 mkdir_by=None, delimiter='_', archive_dir=None, keymapping=True,
+                key_deprecation=True,
                 verbose=True, add_header=None):
     ''' Renames a FITS file by ``rename_by`` with delimiter.
     Parameters
@@ -127,9 +151,7 @@ def fitsrenamer(fpath=None, header=None, newtop=None, rename_by=["OBJECT"],
 
     # Copy keys based on KEYMAP
     if keymapping:
-        for k, v in KEYMAP.items():
-            if (v is not None) and (k not in header):
-                header[k] = (header[v], f"Copied from {v}")
+        header = key_mapper(header, KEYMAP, deprecation=key_deprecation)
 
     newhdul = fits.PrimaryHDU(data=hdul[0].data, header=header)
 
@@ -744,10 +766,6 @@ def make_summary(filelist, extension=0, fname_option='relative',
         The column name to sort the results. It can be any element of
         ``keywords`` or ``'file'``, which sorts the table by the file name.
     """
-
-    if len(filelist) == 0:
-        print("No FITS file found.")
-        return
 
     def _get_fname(path):
         if fname_option == 'relative':
