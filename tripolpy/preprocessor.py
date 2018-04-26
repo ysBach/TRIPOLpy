@@ -2,6 +2,7 @@ import warnings
 from pathlib import Path
 from itertools import product
 from astropy.io import fits
+from astropy.io.fits import Card
 from astropy.table import Table
 from .core import *
 
@@ -52,6 +53,22 @@ class Preprocessor():
         keymapping: bool, optional
             Whether to add header keys based on KEYMAP.
         '''
+        def _cards_airmass(am, full):
+            cs = [Card("AIRMASS", am, "Aaverage airmass (Stetson 1988)"),
+                  Card("ALT", full["alt"][0],
+                       "Altitude (start of the exposure)"),
+                  Card("AZ", full["az"][0], "Azimuth (start of the exposure)"),
+                  Card("ALT_MID", full["alt"][1],
+                       "Altitude (midpoint of the exposure)"),
+                  Card("AZ_MID", full["az"][1],
+                       "Azimuth (midpoint of the exposure)"),
+                  Card("ALT_END", full["alt"][2],
+                       "Altitude (end of the exposure)"),
+                  Card("AZ_END", full["az"][2],
+                       "Azimuth (end of the exposure)")
+                  ]
+            return cs
+
         newpaths = []
         for fpath in self.rawpaths:
             # If it is TL image (e.g., ``g.fits``), delete it
@@ -72,6 +89,7 @@ class Preprocessor():
             # This is done outside of TRIPOL computer since it takes too much
             # time on that computer...
             hdr = fits.getheader(fpath)
+            cards = []
             if hdr["OBJECT"].lower()[:4] not in ['bias', 'dark', 'test']:
                 # FYI: Flat may require airmass just for check (twilight/night)
                 try:
@@ -87,19 +105,7 @@ class Preprocessor():
                                         frame='icrs',
                                         full=True)
 
-                    hdr["AIRMASS"] = (am, "Aaverage airmass (Stetson 1988)")
-                    hdr["ALT"] = (full["alt"][0],
-                                  "Altitude (start of the exposure)")
-                    hdr["AZ"] = (full["az"][0],
-                                 "Azimuth (start of the exposure)"),
-                    hdr["ALT_MID"] = (full["alt"][1],
-                                     "Altitude (midpoint of the exposure)")
-                    hdr["AZ_MID"] = (full["az"][1],
-                                     "Azimuth (midpoint of the exposure)")
-                    hdr["ALT_END"] = (full["alt"][2],
-                                      "Altitude (end of the exposure)")
-                    hdr["AZ_END"] = (full["az"][2],
-                                     "Azimuth (end of the exposure)")
+                    cards.append(_cards_airmass(am, full))
                     hdr.add_history("ALT-AZ calculated from TRIPOLpy.")
                     hdr.add_history("AIRMASS calculated from TRIPOLpy.")
                     hdr.add_comment(amstr)
@@ -116,24 +122,28 @@ class Preprocessor():
 
             # Add counter if there is none:
             if "COUNTER" not in hdr:
-                hdr["COUNTER"] = (counter, "Image counter")
+                cards.append(Card("COUNTER", counter, "Image counter"))
 
             # Add polarimetry-key (RET-ANG1) if there is none:
             if "RET-ANG1" not in hdr:
                 try:
-                    hwpangle = float(hdr["OBJECT"].split('_')[-1])
+                    hwpangle = float(hdr[KEYMAP["OBJECT"]].split('_')[-1])
                     if hwpangle > 180:
                         hwpangle = hwpangle / 10
                 except ValueError:
                     hwpangle = 0
-                hdr["RET-ANG1"] = (hwpangle,
-                                   "The half-wave plate angle.")
+
+                cards.append(Card("RET-ANG1", hwpangle,
+                                  "The half-wave plate angle."))
+
+            add_hdr = fits.Header(cards)
 
             newpath = fitsrenamer(fpath,
                                   header=hdr,
                                   newtop=newtop,
                                   rename_by=rename_by,
                                   delimiter=delimiter,
+                                  add_header=add_hdr,
                                   mkdir_by=mkdir_by,
                                   archive_dir=archive_dir,
                                   keymapping=keymapping,
