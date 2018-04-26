@@ -90,7 +90,14 @@ class Preprocessor():
             # time on that computer...
             hdr = fits.getheader(fpath)
             cards = []
-            if hdr["OBJECT"].lower()[:4] not in ['bias', 'dark', 'test']:
+
+            try:
+                obj4 = hdr["OBJECT"].lower()[:4]
+            except KeyError:
+                print(f"{fpath} has no OBJECT")
+                continue
+
+            if obj4 not in ['bias', 'dark', 'test']:
                 # FYI: Flat may require airmass just for check (twilight/night)
                 try:
                     am, full = airmass_hdr(hdr,
