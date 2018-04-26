@@ -4,16 +4,14 @@ from itertools import product
 from astropy.io import fits
 from astropy.table import Table
 from .core import *
-from ccdproc import ImageFileCollection as IC
 
 __all__=["Preprocessor"]
 
 class Preprocessor():
-    def __init__(self, toppath):
+    def __init__(self, toppath, summary_keywords=USEFUL_KEYS):
         self.toppath = toppath  # e.g., Path('180412', 'rawdata')
-        self.filters = ['g', 'r', 'i']  # Actually g', r', and i' bands
         self.rawpaths = list(Path(self.toppath).glob('*.fits'))
-        self.ronoises = dict(g=None, r=None, i=None)
+        self.summary_keywords = summary_keywords
         self.newpaths = None
         self.summary = None
         self.redpaths = None
@@ -107,9 +105,13 @@ class Preprocessor():
                     hdr.add_comment(amstr)
 
                 except ValueError:
-                    return hdr, am, full
+                    if verbose:
+                        print("ValueError....")
+                        return hdr, am, full
 
                 except KeyError:
+                    if verbose:
+                        print(f"{fpath} failed in airmass calculation")
                     pass
 
             # Add counter if there is none:
@@ -141,7 +143,9 @@ class Preprocessor():
         self.newpaths = newpaths
         self.summary = make_summary(newpaths,
                                     output=self.toppath / "summary.csv",
-                                    format='ascii.csv')
+                                    format='ascii.csv',
+                                    keywords=self.summary_keywords,
+                                    verbose=verbose)
 
     # Sometimes TRIPOL specific
     # Hardcode for group_by to be exptime and filter.
@@ -199,6 +203,7 @@ class Preprocessor():
                 self.summary = Table.read(self.toppath / "summary.csv",
                                         format='ascii.csv')
                 self.newpaths = self.summary["file"].tolist()
+                self.summary_keywords = self.summary.colnames
             except:
                 raise ValueError("Maybe files not 'organize'd yet?")
 

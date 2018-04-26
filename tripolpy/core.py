@@ -25,8 +25,8 @@ __all__ = ["KEYMAP", "GAIN_EPADU", "RONOISE_E", "USEFUL_KEYS",
 KEYMAP = {"EXPTIME": 'EXPOS', "GAIN": 'EGAIN', "OBJECT": 'OBJECT',
           "FILTER": 'FILTER', "DATE-OBS": 'DATE', "RDNOISE": None}
 
-USEFUL_KEYS = ["EXPTIME", "FILTER", "DATE-OBS", "LONGITUD", "LATITUDE",
-               "OBJECT", "EPOCH", "RA", "DEC"]
+USEFUL_KEYS = ["EXPTIME", "FILTER", "DATE-OBS", "RET-ANG1",
+               "OBJECT", "EPOCH", "RA", "DEC", "ALT", "AZ", "AIRMASS"]
 
 # FIXME: Update gain and ronoise after performance evaluation
 GAIN_EPADU = dict(g=1.82, r=1.05, i=2.00)
