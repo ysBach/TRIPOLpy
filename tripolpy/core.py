@@ -287,7 +287,7 @@ def airmass_obs(targetcoord, obscoord, ut, exptime, scale=750., full=False):
     return am_simpson
 
 
-def airmass_hdr(header, ra=None, dec=None, ut=None, exptime=None,
+def airmass_hdr(header=None, ra=None, dec=None, ut=None, exptime=None,
                 lon=None, lat=None, height=None, equinox=None, frame=None,
                 scale=750.,
                 ra_key="RA", dec_key="DEC", ut_key="DATE-OBS",

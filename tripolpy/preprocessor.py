@@ -106,6 +106,9 @@ class Preprocessor():
                     hdr.add_history("AIRMASS calculated from TRIPOLpy.")
                     hdr.add_comment(amstr)
 
+                except ValueError:
+                    return hdr, am, full
+
                 except KeyError:
                     pass
 
