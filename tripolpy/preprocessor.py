@@ -91,17 +91,17 @@ class Preprocessor():
 
                     hdr["AIRMASS"] = (am, "Aaverage airmass (Stetson 1988)")
                     hdr["ALT"] = (full["alt"][0],
-                                  "Altitude at the start of the exposure")
+                                  "Altitude (start of the exposure)")
                     hdr["AZ"] = (full["az"][0],
-                                 "Azimuth at the start of the exposure"),
+                                 "Azimuth (start of the exposure)"),
                     hdr["ALT_MID"] = (full["alt"][1],
-                                     "Altitude at the midpoint of the exposure")
+                                     "Altitude (midpoint of the exposure)")
                     hdr["AZ_MID"] = (full["az"][1],
-                                     "Azimuth at the midpoint of the exposure")
+                                     "Azimuth (midpoint of the exposure)")
                     hdr["ALT_END"] = (full["alt"][2],
-                                      "Altitude at the end of the exposure")
+                                      "Altitude (end of the exposure)")
                     hdr["AZ_END"] = (full["az"][2],
-                                     "Azimuth at the end of the exposure")
+                                     "Azimuth (end of the exposure)")
                     hdr.add_history("ALT-AZ calculated from TRIPOLpy.")
                     hdr.add_history("AIRMASS calculated from TRIPOLpy.")
                     hdr.add_comment(amstr)
