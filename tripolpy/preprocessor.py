@@ -136,10 +136,6 @@ class Preprocessor():
                 cards.append(Card("RET-ANG1", hwpangle,
                                   "The half-wave plate angle."))
 
-            print(fpath)
-            print(type(cards))
-            for c in cards:
-                print(type(c))
             add_hdr = fits.Header(cards)
 
             newpath = fitsrenamer(fpath,
