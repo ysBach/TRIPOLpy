@@ -9,17 +9,19 @@ from astropy import units as u
 from astropy.coordinates import EarthLocation, AltAz, SkyCoord
 from astropy.time import Time
 from astropy.table import Table, Column
-from astropy.nddata import CCDData
+from astropy.nddata import CCDData, StdDevUncertainty
 from astropy.modeling.functional_models import Gaussian1D
 from astropy.modeling.fitting import LevMarLSQFitter
 
-from ccdproc import combine, trim_image
+from ccdproc import (combine, trim_image,
+                     subtract_bias, subtract_bias, flat_correct)
+
 from ccdproc import sigma_func as ccdproc_mad2sigma_func
 
-__all__ = ["KEYMAP", "GAIN_EPADU", "RONOISE_E", "USEFUL_KEYS",
+__all__ = ["imgpath", "KEYMAP", "GAIN_EPADU", "RONOISE_E", "USEFUL_KEYS",
            "mkdir", "fits_newpath", "fitsrenamer", "load_if_exists", "stack_FITS",
            "calc_airmass", "airmass_obs", "airmass_hdr",
-           "CCDData_astype", "combine_ccd", "make_errmap", "make_summary",
+           "CCDData_astype", "combine_ccd", "make_errmap", "bdf_process","make_summary",
            "Gfit2hist", "bias2ronoise"]
 
 KEYMAP = {"EXPTIME": 'EXPOS', "GAIN": 'EGAIN', "OBJECT": 'OBJECT',
@@ -32,6 +34,17 @@ USEFUL_KEYS = ["EXPTIME", "FILTER", "DATE-OBS", "RET-ANG1",
 GAIN_EPADU = dict(g=1.82, r=1.05, i=2.00)
 
 RONOISE_E = dict(g=None, r=None, i=None)
+
+def imgpath(group_by_vals, directory, delimiter):
+    imgname = ""
+    for val in group_by_vals:
+        imgname += str(val)
+        imgname += str(delimiter)
+    imgname = imgname[:-1] + ".fits"
+
+    path = Path(directory) / imgname
+
+    return path
 
 
 def mkdir(fpath, mode=0o777, parents=True, exist_ok=True):
@@ -92,14 +105,13 @@ def key_mapper(header, keymap, deprecation=False):
         The header to be modified
     keymap: dict
         The dictionary contains ``{<standard_key>:<original_key>}`` information
-
     deprecation: bool, optional
         Whether to change the original keywords' comments to contain deprecation
         warning. If ``True``, the original keywords' comments will become
         ``Deprecated. See <standard_key>.``.
     '''
     newhdr = header.copy()
-    for k, v in KEYMAP.items():
+    for k, v in keymap.items():
         if (v is not None) and (k not in newhdr):
             comment_ori = newhdr.comments[v]
             newhdr[k] = (newhdr[v], comment_ori)
@@ -110,7 +122,7 @@ def key_mapper(header, keymap, deprecation=False):
 
 
 def fitsrenamer(fpath=None, header=None, newtop=None, rename_by=["OBJECT"],
-                mkdir_by=None, delimiter='_', archive_dir=None, keymapping=True,
+                mkdir_by=None, delimiter='_', archive_dir=None, keymap=None,
                 key_deprecation=True,
                 verbose=True, add_header=None):
     ''' Renames a FITS file by ``rename_by`` with delimiter.
@@ -134,8 +146,13 @@ def fitsrenamer(fpath=None, header=None, newtop=None, rename_by=["OBJECT"],
         Where to move the original FITS file. If ``None``, the original file
         will remain there. Deleting original FITS is dangerous so it is only
         supported to move the files. You may delete files manually if needed.
-    keymapping: bool, optional
-        Whether to add header keys based on KEYMAP.
+    keymap: dict or None, optional
+        If not ``None``, the keymapping is done by using the dict of ``keymap``
+        in the format of ``{<standard_key>:<original_key>}``.
+    key_deprecation: bool, optional
+        Whether to change the original keywords' comments to contain deprecation
+        warning. If ``True``, the original keywords' comments will become
+        ``Deprecated. See <standard_key>.``.
     add_header: header or dict
         The header keyword, value (and comment) to add after the renaming.
     '''
@@ -150,8 +167,8 @@ def fitsrenamer(fpath=None, header=None, newtop=None, rename_by=["OBJECT"],
         header += add_header
 
     # Copy keys based on KEYMAP
-    if keymapping:
-        header = key_mapper(header, KEYMAP, deprecation=key_deprecation)
+    if keymap is not None:
+        header = key_mapper(header, keymap, deprecation=key_deprecation)
 
     newhdul = fits.PrimaryHDU(data=hdul[0].data, header=header)
 
@@ -484,7 +501,7 @@ def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
                 subtract_frame=None, combine_method='median', reject_method=None,
                 normalize=False, exposure_key='EXPTIME',
                 combine_uncertainty_function=ccdproc_mad2sigma_func,
-                extension=0, min_value=0, type_key=None, type_val=None,
+                extension=0, type_key=None, type_val=None,
                 dtype=np.float32, output_verify='fix', overwrite=False,
                 **kwargs):
     ''' Combining images
@@ -568,46 +585,15 @@ def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
         print(dict(**kwargs))
         return
 
-    def _ccdproc_combine(ccdlist, combine_method, min_value=0,
-                         combine_uncertainty_function=ccdproc_mad2sigma_func,
-                         **kwargs):
-        ''' Combine after minimum value correction and then rejection/trimming.
-        ccdlist:
-            list of CCDData
-
-        combine_method: str
-            The ``method`` for ``ccdproc.combine``, i.e., {'average', 'median',
-            'sum'}
-
-        **kwargs:
-            kwargs for the ``ccdproc.combine``. See its documentation.
-        '''
-        if not isinstance(ccdlist, list):
-            ccdlist = [ccdlist]
-
-        # copy for safety
-        use_ccds = ccdlist.copy()
-
-        # minimum value correction and trim
-        for ccd in use_ccds:
-            ccd.data[ccd.data < min_value] = min_value
-
-        #combine
-        ccd_combined = combine(img_list=use_ccds,
-                               method=combine_method,
-                               combine_uncertainty_function=combine_uncertainty_function,
-                               **kwargs)
-
-        return ccd_combined
 
     def _normalize_exptime(ccdlist, exposure_key):
         _ccdlist = ccdlist.copy()
         exptimes = []
 
-        for i, c in enumerate(_ccdlist):
-            exptime = c.header[exposure_key]
+        for i in range(len(_ccdlist)):
+            exptime = _ccdlist[i].header[exposure_key]
             exptimes.append(exptime)
-            _ccdlist[i] = c.divide(exptime)
+            _ccdlist[i] = _ccdlist[i].divide(exptime)
 
         if len(np.unique(exptimes)) != 1:
             print('There are more than one exposure times:')
@@ -640,36 +626,35 @@ def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
     _print_info(combine_method=combine_method,
                 Nccd=len(ccdlist),
                 reject_method=reject_method,
-                min_value=min_value,
                 dtype=dtype,
                 **kwargs)
 
-    # Normalize by exposure
+    # Normalize by exposure: useful if flat images have different exptimes.
     if normalize:
         ccdlist = _normalize_exptime(ccdlist, exposure_key)
 
     # Set rejection switches
     clip_extrema, minmax_clip, sigma_clip = _set_reject_method(reject_method)
 
-    master = _ccdproc_combine(ccdlist=ccdlist,
-                              combine_method=combine_method,
-                              min_value=min_value,
-                              clip_extrema=clip_extrema,
-                              minmax_clip=minmax_clip,
-                              sigma_clip=sigma_clip,
-                              combine_uncertainty_function=combine_uncertainty_function,
-                              **kwargs)
+    master = combine(img_list=ccdlist,
+                     combine_method=combine_method,
+                     clip_extrema=clip_extrema,
+                     minmax_clip=minmax_clip,
+                     sigma_clip=sigma_clip,
+                     combine_uncertainty_function=combine_uncertainty_function,
+                     **kwargs)
 
-    str_history = '{:d} images {:s} combined for {:s} = {:s}'
-    header.add_history(str_history.format(len(ccdlist),
-                                          str(combine_method),
+    str_history = '{:d} images with {:s} = {:s} are {:s} combined '
+    ncombine = len(ccdlist)
+    header["NCOMBINE"] = ncombine
+    header.add_history(str_history.format(ncombine,
                                           str(type_key),
-                                          str(type_val)))
-    header["NCOMBINE"] = len(ccdlist)
+                                          str(type_val),
+                                          str(combine_method)))
 
     if subtract_frame is not None:
         subtract = CCDData(subtract_frame.copy())
-        master = master.subtract(subtract)
+        master.data = master.subtract(subtract).data
         header.add_history("Subtracted a user-provided frame")
 
     master.header = header
@@ -680,6 +665,151 @@ def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
 
     return master
 
+
+def get_from_header(header, key, unit=None, verbose=True,
+                    default=0):
+    ''' Get a variable from the header object.
+    Parameters
+    ----------
+    header: Header
+        The header to extract the value.
+    key: str
+        The header keyword to extract.
+    unit: astropy unit
+        The unit of the value.
+    default: str, int, float, ..., or Quantity
+        The default if not found from the header.
+    '''
+    value = None
+
+    try:
+        value = header[key]
+        if verbose:
+            print(f"header: {key} = {value}")
+
+    except KeyError:
+        if default is not None:
+            value = astropy_util.change_to_quantity(default, desired=unit)
+            warnings.warn(f"{key} not found in header: setting to {default}.")
+
+    if unit is not None:
+        value = value * unit
+
+    return value
+
+def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None,
+                fits_section=None, calc_err=False, unit='adu', gain=None,
+                ronoise=None, gain_key="GAIN", ronoise_key="RONOISE",
+                gain_unit=u.electron / u.adu, ronoise_unit=u.electron,
+                dark_exposure=None, data_exposure=None, exposure_key="EXPTIME",
+                exposure_unit=u.s, dark_scale=False,
+                min_value=None, norm_value=None,
+                verbose=True, output_verify='fix', overwrite=True,
+                dtype="float32"):
+    ''' Do bias, dark and flat process.
+    Parameters
+    ----------
+    ccd: array-like
+        The ccd to be processed.
+    output: path-like
+        Saving directory
+    '''
+
+    proc = CCDData(ccd)
+    hdr_new = proc.header
+
+    if mbiaspath is None:
+        do_bias = False
+        # mbias = CCDData(np.zeros_like(ccd), unit=unit)
+    else:
+        do_bias = True
+        mbias = CCDData.read(mbiaspath, unit=unit)
+        hdr_new.add_history(f"Bias subtracted using {mbiaspath}")
+
+    if mdarkpath is None:
+        do_dark = False
+        mdark = None
+    else:
+        do_dark = True
+        mdark = CCDData.read(mdarkpath, unit=unit)
+        hdr_new.add_history(f"Dark subtracted using {mdarkpath}")
+        if dark_scale:
+            hdr_new.add_history(
+                f"Dark scaling {dark_scale} using {exposure_key}")
+
+    if mflatpath is None:
+        do_flat = False
+        # mflat = CCDData(np.ones_like(ccd), unit=unit)
+    else:
+        do_flat = True
+        mflat = CCDData.read(mflatpath)
+        hdr_new.add_history(f"Flat corrected using {mflatpath}")
+
+    if fits_section is not None:
+        proc = trim_image(proc, fits_section)
+        mbias = trim_image(mbias, fits_section)
+        mdark = trim_image(mdark, fits_section)
+        mflat = trim_image(mflat, fits_section)
+        hdr_new.add_history(f"Trim by FITS section {fits_section}")
+
+    if do_bias:
+        proc = subtract_bias(proc, mbias)
+
+    if do_dark:
+        proc = subtract_dark(proc,
+                             mdark,
+                             dark_exposure=dark_exposure,
+                             data_exposure=data_exposure,
+                             exposure_time=exposure_key,
+                             exposure_unit=exposure_unit,
+                             scale=dark_scale)
+        # if calc_err and verbose:
+        #     if mdark.uncertainty is not None:
+        #         print("Dark has uncertainty frame: Propagate in arithmetics.")
+        #     else:
+        #         print("Dark does NOT have uncertainty frame")
+
+    if calc_err:
+        if gain is None:
+            gain = get_from_header(hdr_new, gain_key,
+                                    unit=gain_unit,
+                                    verbose=verbose,
+                                    default=1.).value
+
+        if ronoise is None:
+            ronoise = get_from_header(hdr_new, ronoise_key,
+                                    unit=ronoise_unit,
+                                    verbose=verbose,
+                                    default=0.).value
+
+        err = make_errmap(proc,
+                                    gain_epadu=gain,
+                                    subtracted_dark=mdark)
+
+        proc.uncertainty = StdDevUncertainty(err)
+        errstr = (f"Error calculated using gain = {gain:.3f} [e/ADU] and "
+                  + f"rdnoise = {ronoise:.3f} [e].")
+        hdr_new.add_history(errstr)
+
+    if do_flat:
+        if calc_err:
+            if (mflat.uncertainty is not None) and verbose:
+                print("Flat has uncertainty frame: Propagate in arithmetics.")
+                hdr_new.add_history(
+                    "Flat had uncertainty and is also propagated.")
+
+        proc = flat_correct(proc,
+                            mflat,
+                            min_value=min_value,
+                            norm_value=norm_value)
+
+    proc = CCDData_astype(proc, dtype=dtype)
+    proc.header = hdr_new
+
+    if output is not None:
+        proc.write(output, output_verify=output_verify, overwrite=overwrite)
+
+    return proc
 
 def make_errmap(ccd, gain_epadu, ronoise_electron=0,
                 subtracted_dark=None):

@@ -3,6 +3,7 @@ from pathlib import Path
 from itertools import product
 from astropy.io import fits
 from astropy.io.fits import Card
+from astropy import table
 from astropy.table import Table
 from .core import *
 
@@ -17,18 +18,49 @@ class Preprocessor():
         self.summary = None
         self.redpaths = None
         self.biaspaths = None
-        self.flatpaths = None
         self.darkpaths = None
+        self.flatpaths = None
         # self.renamed = False
         # rawpaths: Original file paths
         # newpaths: Renamed paths
         # redpaths: Reduced frames paths excluding BDF
 
+    def initialize_self(self):
+        if self.summary is None:
+            try:
+                self.summary = Table.read(self.toppath / "summary.csv",
+                                          format='ascii.csv')
+                self.newpaths = self.summary["file"].tolist()
+            except FileNotFoundError:
+                pass
+
+        if self.biaspaths is None:
+            try:
+                with open("mbias.list", 'r') as bl:
+                    self.biaspaths = bl.read().splitlines()
+            except FileNotFoundError:
+                pass
+
+        if self.darkpaths is None:
+            try:
+                with open("mdark.list", 'r') as dl:
+                    self.darkpaths = dl.read().splitlines()
+            except FileNotFoundError:
+                pass
+
+        if self.flatpaths is None:
+            try:
+                with open("mflat.list", 'r') as fl:
+                    self.flatpaths = fl.read().splitlines()
+            except FileNotFoundError:
+                pass
+
+
     # TRIPOL specific
     def organize_tripol(self, newtop=None,
                         rename_by=["COUNTER", "OBJECT", "EXPOS"],
-                        mkdir_by=["FILTER"], delimiter='_', archive_dir=None,
-                        keymapping=True, verbose=True):
+                        mkdir_by=["FILTER", "OBJECT"], delimiter='_',
+                        archive_dir=None, verbose=False):
         ''' Rename FITS files after updating theur headers.
         Parameters
         ----------
@@ -50,8 +82,6 @@ class Preprocessor():
             will remain there. Deleting original FITS is dangerous so it is only
             supported to move the files. You may delete files manually if
             needed.
-        keymapping: bool, optional
-            Whether to add header keys based on KEYMAP.
         '''
         def _cards_airmass(am, full):
             cs = [Card("AIRMASS", am, "Aaverage airmass (Stetson 1988)"),
@@ -85,16 +115,15 @@ class Preprocessor():
                      + "Stellar Photometry with CCDs' by P. Stetson, DAO "
                      + "preprint, September 1988.")
 
-            # Set the airmass and Alt-Az coordinates:
-            # This is done outside of TRIPOL computer since it takes too much
-            # time on that computer...
             hdr = fits.getheader(fpath)
             cards = []
 
+            # If the first 4 chars of OBJECT is not object-like frames, don't
+            # calculate airmass.
             try:
                 obj4 = hdr["OBJECT"].lower()[:4]
             except KeyError:
-                print(f"{fpath} has no OBJECT")
+                print(f"{fpath} has no OBJECT! Skipping")
                 continue
 
             if obj4 not in ['bias', 'dark', 'test']:
@@ -153,7 +182,7 @@ class Preprocessor():
                                   add_header=add_hdr,
                                   mkdir_by=mkdir_by,
                                   archive_dir=archive_dir,
-                                  keymapping=keymapping,
+                                  keymap=KEYMAP,
                                   verbose=verbose)
             newpaths.append(newpath)
 
@@ -164,14 +193,12 @@ class Preprocessor():
                                     keywords=self.summary_keywords,
                                     verbose=verbose)
 
-    # Sometimes TRIPOL specific
-    # Hardcode for group_by to be exptime and filter.
-    # For flat, group_by will be exptime, filter, and hwpangle.
-    def make_dark(self, darkdir=None, dark_key="OBJECT", dark_val="dark",
+    # TRIPOL specific
+    def make_dark(self, darkdir=None, biasdir=None, dark_key="OBJECT", dark_val="dark",
+                  bias_key="OBJECT", bias_val="bias",
                   group_by=["FILTER", "EXPTIME"],
                   exposure_key="EXPTIME",
-                  delimiter='_', comb_kwargs=None, bias=True,
-                  bias_exptime_max=0.1):
+                  delimiter='_', comb_kwargs=None):
         """ Makes and saves bias and dark (bias NOT subtracted) images.
         Parameters
         ----------
@@ -180,6 +207,9 @@ class Preprocessor():
 
         dark_key, dark_val: str
             The header keyword and value to identify dark frames.
+
+        bias_key, bias_val: str
+            The header keyword and value to identify bias frames.
 
         group_by: None, str or list str, optional
             The header keywords to be used for grouping frames. For dark
@@ -193,36 +223,10 @@ class Preprocessor():
 
         comb_kwargs: dict or None, optional
             The parameters for ``combine_ccd``.
-
-        bias: bool, optional
-            If ``True``, it autoamtically finds the dark frames with exposure
-            time L.E. than ``bias_exptime_max``, and the dark frame is saved
-            as bias frame, as well as dark frame.
-
-        bias_exptime_max: float, optional
-            The maximum exposure time to be used to determine whether the dark
-            frame is bias.
         """
-        def _darkpath(group_by_vals, delimiter):
-            darkname = ""
-            for val in group_by_vals:
-                darkname += str(val)
-                darkname += str(delimiter)
-            darkname = darkname[:-1] + ".fits"
-
-            darkpath = darkdir / darkname
-
-            return darkpath
 
         # Initial settings
-        if self.summary is None:
-            try:
-                self.summary = Table.read(self.toppath / "summary.csv",
-                                        format='ascii.csv')
-                self.newpaths = self.summary["file"].tolist()
-                self.summary_keywords = self.summary.colnames
-            except:
-                raise ValueError("Maybe files not 'organize'd yet?")
+        self.initialize_self()
 
         if comb_kwargs is None:
             comb_kwargs = dict(overwrite=True,
@@ -234,6 +238,7 @@ class Preprocessor():
 
         if group_by is None:
             group_by = []
+
         elif exposure_key not in group_by:
             warnings.warn("group_by is not None and does not include exposure_key. "
                           + f"Force to append it ({exposure_key}).")
@@ -249,7 +254,22 @@ class Preprocessor():
         darkdir = Path(darkdir)
         mkdir(darkdir)
 
-        darktab = self.summary[self.summary[dark_key] == dark_val]
+        made_bias = False
+
+        biastab = self.summary[self.summary[bias_key] == bias_val]
+        if len(biastab) > 0:
+            biaspath = imgpath("bias", biasdir, delimiter)
+            mbias = combine_ccd(biastab["file"],
+                                **comb_kwargs,
+                                type_key=bias_key,
+                                type_val=bias_val)
+            mbias.header[dark_key] = "bias"
+            mbias.write(biaspath, overwrite=True)
+            made_bias=True
+
+        darktab = self.summary[(self.summary[dark_key] == dark_val)]
+        darktab[exposure_key] = darktab[exposure_key].astype(float)
+        darktab.sort(exposure_key)
         darkgroups = darktab.group_by(group_by)
         min_exp = darkgroups[exposure_key].astype(float).min()
 
@@ -260,78 +280,60 @@ class Preprocessor():
         for group in darkgroups.groups:
             group_by_vals = list(group[group_by][0].as_void())
             exptime_dark = float(group[exposure_key][0])
-            darkpath = _darkpath(group_by_vals, delimiter)
+            darkpath = imgpath(group_by_vals, darkdir, delimiter)
+
+            if (not made_bias) and (exptime_dark == min_exp):
+                if min_exp > 1:
+                    warnings.warn(
+                        f"The minimum exposure is long ({min_exp} s)")
+                biasname = darkpath.name.replace(dark_val, "bias")
+                biaspath = darkpath.parent / biasname
+                biaspaths.append(biaspath)
+
+                mbias = combine_ccd(group["file"],
+                                    **comb_kwargs,
+                                    type_key=group_by,
+                                    type_val=group_by_vals)
+                mbias.header[dark_key] = "bias"
+                mbias.header.add_history(f"Changed {dark_key} from "
+                                         + "{dark_val} to bias")
+                mbias.write(biaspath, overwrite=True)
+                made_bias=True
+
 
             # Dark combine
             mdark = combine_ccd(group["file"],
-                                output=darkpath,
                                 **comb_kwargs,
                                 type_key=group_by,
                                 type_val=group_by_vals)
+            mdark_b = bdf_process(mdark,
+                                  output=darkpath,
+                                  mbiaspath=biaspath)
 
             darkpaths.append(darkpath)
 
-            if bias:
-                exptime_dark = float(group[exposure_key][0])
-                if exptime_dark <= bias_exptime_max:
-                    biasname = darkpath.name.replace(dark_val, "bias")
-                    biaspath = darkpath.parent / biasname
-                    if biaspath.exists():
-                        raise ValueError("There are more than one dark frames "
-                            + f"with exposure time <= {bias_exptime_max}!\n"
-                            + "FYI, the minimum exposure time for dark frames "
-                            + f"is {min_exp} seconds.")
-                    biaspaths.append(biaspath)
-
-                    bias = mdark.copy()
-                    bias.header[dark_key] = "bias"
-                    bias.header.add_history(f"Changed {dark_key} from {dark_val} to bias")
-                    bias.write(biaspath, overwrite=True)
 
         if len(biaspaths) == 0:
-            warnings.warn("No bias was found. \nFYI, the minimum exposure time "
+            warnings.warn("No bias was made. \nFYI, the minimum exposure time "
                           + f"for dark frames is {min_exp} seconds.")
 
+        with open(self.toppath / 'mbias.list', 'w+') as bl:
+            for bp in biaspaths:
+                bl.write(f"{str(bp)}\n")
 
-        # # If not, darkgroups.sort("EXPTIME") and take
-        # # Find as bias when "dark" and exp=0.0
-        # if bias:
-        #     # Group by including exposure key
-        #     darkgroups = darktab.group_by(group_by)
-
-        #     for group in darkgroups.groups:
-        #         exptime_dark = float(group[exposure_key][0])
-        #         exptime_dark_min = min(dark_exptimes)
-        #         exptime_min_idx = dark_exptimes.index(exptime_dark_min)
-        #         # Find suitable bias image
-        #         if exptime_dark_min < 1:
-        #             exptime_min_darkpath = darkpaths[exptime_min_idx]
-        #             biasname = exptime_min_darkpath.name.replace(dark_val, "bias")
-        #             biaspath = exptime_min_darkpath.parent / biasname
-        #             biaspaths.append(biaspath)
-
-        #             bias = darks[exptime_dark_min]
-        #             bias.header[dark_key] = "bias"
-        #             bias.header["HISTORY"] = f"Changed from {dark_val} to bias"
-        #             bias.write(biaspath, overwrite=True)
-
-        #             print("Using dark with exposure "
-        #                 + f"{min(darks.keys())}s as bias ({biaspath})")
-
-        #         else:
-        #             warnings.warn("Minimum dark exposure is too long "
-        #                         + f"({exptime_dark_min} sec)!"
-        #                         + " I think you have no file for bias...")
+        with open(self.toppath / 'mdark.list', 'w+') as dl:
+            for dp in darkpaths:
+                dl.write(f"{str(dp)}\n")
 
         self.biaspaths = biaspaths
         self.darkpaths = darkpaths
 
 
     # TRIPOL specific
-    def make_flat(self, flatdir=None, comb_kwargs=None, flat_key="OBJECT",
-                  flat_startswith="flat", flat_key_delimiter='_',
-                  flat_key_info=["OBJECT", "FILTER", "HWPANGLE"],
-                  polarimetry=False, hwpkey=None):
+
+    def make_flat(self, flatdir=None, comb_kwargs=None, delimiter='_',                              flat_key="OBJECT", flat_startswith="flat",
+                 group_by=["FILTER", "RET-ANG1"],
+                 polarimetry=False, hwpkey=None):
         '''
         Flat image must have the header key ``flat_key`` *starting* with the
         ``flat_startswith``. By default, it seeks for
@@ -339,7 +341,8 @@ class Preprocessor():
 
         '''
 
-        # Initial settings
+        # Initial settings: If somehow pipeline stopped, renewing process should
+        # work in a safer way if we include these ``if self.xx is None`` lines.
         if self.summary is None:
             try:
                 self.summary = Table.read(self.toppath / "summary.csv",
@@ -347,6 +350,20 @@ class Preprocessor():
                 self.newpaths = self.summary["file"].tolist()
             except:
                 raise ValueError("Maybe files not 'organize'd yet?")
+
+        if self.biaspaths is None:
+            try:
+                with open("mbias.list", 'r') as bl:
+                    self.biaspaths = bl.read().splitlines()
+            except FileNotFoundError:
+                pass
+
+        if self.darkpaths is None:
+            try:
+                with open("mdark.list", 'r') as dl:
+                    self.darkpaths = dl.read().splitlines()
+            except FileNotFoundError:
+                pass
 
         if comb_kwargs is None:
             comb_kwargs = dict(overwrite=True,
@@ -362,12 +379,22 @@ class Preprocessor():
         flatdir = Path(flatdir)
         mkdir(flatdir)
 
-        allgroups = self.summary.group_by(flat_key)
+        allgroups = self.summary.group_by(group_by)
 
         for group in allgroups.groups:
-            obj = group[flat_key][0]
-            if obj.startswith(flat_startswith):
-                info = obj.split(flat_key_delimiter)
+            obj = group["OBJECT"][0]
+            imgfilt = group["FILTER"][0]
+            flatfilt = obj[-1] # The last character
+
+            if not obj.startswith(flat_startswith):
+                continue
+
+            elif flatfilt != imgfilt:
+                continue
+
+            group_by_vals = list(group[group_by][0].as_void())
+            flatpath = imgpath(group_by_vals, flatdir, delimiter)
+            mflat = combine_ccd()
 
         pass
 

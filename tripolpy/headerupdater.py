@@ -13,8 +13,11 @@ args = parser.parse_args()
 tmphdrpath = args.tmpheader
 tmpfitspath = args.tmpfits
 
-counter = tmpfitspath.split('/')[-1].split('_')[1][:4]
-#%%
+try:
+    counter = tmpfitspath.split('/')[-1].split('_')[1][:4]
+except IndexError:
+    counter = -1 # When TL image
+
 LATEST = "Apr2018"
 GAIN_EPADU = dict(g=dict(default=1.82,
                          Apr2018=1.82),
