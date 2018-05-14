@@ -5,11 +5,10 @@ TRIPOL related package
 from setuptools import setup, find_packages
 
 setup_requires=[]
-install_requires = ['numpy', 
-                    'scipy', 
-                    'astropy >= 2.0', 
-                    'ccdproc >= 1.3', 
-                    'matplotlib >= 2']
+install_requires = ['numpy',
+                    'scipy',
+                    'astropy >= 2.0',
+                    'ccdproc >= 1.3']
 
 classifiers = ["Intended Audience :: Science/Research",
                "Operating System :: OS Independent",
@@ -17,7 +16,7 @@ classifiers = ["Intended Audience :: Science/Research",
 
 setup(
     name="tripolpy",
-    version="0.0.1",
+    version="0.1",
     author="Yoonsoo P. Bach",
     author_email="dbstn95@gmail.com",
     description="",

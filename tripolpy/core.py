@@ -5,6 +5,7 @@ import numpy as np
 from scipy.stats import itemfreq
 
 from astropy.io import fits
+from astropy.io.fits import Card
 from astropy import units as u
 from astropy.coordinates import EarthLocation, AltAz, SkyCoord
 from astropy.time import Time
@@ -14,33 +15,63 @@ from astropy.modeling.functional_models import Gaussian1D
 from astropy.modeling.fitting import LevMarLSQFitter
 
 from ccdproc import (combine, trim_image,
-                     subtract_bias, subtract_bias, flat_correct)
+                     subtract_bias, subtract_dark, flat_correct)
 
 from ccdproc import sigma_func as ccdproc_mad2sigma_func
 
-__all__ = ["imgpath", "KEYMAP", "GAIN_EPADU", "RONOISE_E", "USEFUL_KEYS",
-           "mkdir", "fits_newpath", "fitsrenamer", "load_if_exists", "stack_FITS",
-           "calc_airmass", "airmass_obs", "airmass_hdr",
-           "CCDData_astype", "combine_ccd", "make_errmap", "bdf_process","make_summary",
-           "Gfit2hist", "bias2ronoise"]
+__all__ = ["KEYMAP", "GAIN_EPADU", "RDNOISE_E", "USEFUL_KEYS", "MEDCOMB_KEYS",
+           "imgpath", "mkdir", "cards_airmass", "cards_gain_rdnoise",
+           "fits_newpath", "fitsrenamer", "load_if_exists",
+           "stack_FITS", "calc_airmass", "airmass_obs", "airmass_hdr",
+           "CCDData_astype", "combine_ccd", "make_errmap", "bdf_process",
+           "make_summary", "Gfit2hist", "bias2ronoise"]
+
+MEDCOMB_KEYS = dict(overwrite=True,
+                    unit=None,
+                    combine_method="median",
+                    reject_method=None,
+                    combine_uncertainty_function=None)
+
+LATEST = "Apr2018"
+
+GAIN_EPADU = dict(g=dict(default=1.82,
+                         Apr2018=1.82),
+                  r=dict(default=1.05,
+                         Apr2018=1.05),
+                  i=dict(default=2.00,
+                         Apr2018=2.00))
+
+RDNOISE_E = dict(g=dict(default=0,
+                        Apr2018=1),
+                 r=dict(default=0,
+                        Apr2018=1),
+                 i=dict(default=0,
+                        Apr2018=1))
 
 KEYMAP = {"EXPTIME": 'EXPOS', "GAIN": 'EGAIN', "OBJECT": 'OBJECT',
-          "FILTER": 'FILTER', "DATE-OBS": 'DATE', "RDNOISE": None}
+          "FILTER": 'FILTER', "EQUINOX": 'EPOCH',
+          "DATE-OBS": 'DATE', "RDNOISE": None}
 
 USEFUL_KEYS = ["EXPTIME", "FILTER", "DATE-OBS", "RET-ANG1",
                "OBJECT", "EPOCH", "RA", "DEC", "ALT", "AZ", "AIRMASS"]
 
-# FIXME: Update gain and ronoise after performance evaluation
-GAIN_EPADU = dict(g=1.82, r=1.05, i=2.00)
 
-RONOISE_E = dict(g=None, r=None, i=None)
+def imgpath(vals, delimiter='_', directory=None):
+    ''' Gives the image path.
+    '''
+    if isinstance(vals, str):
+        vals = [vals]
 
-def imgpath(group_by_vals, directory, delimiter):
     imgname = ""
-    for val in group_by_vals:
+
+    for val in vals:
         imgname += str(val)
         imgname += str(delimiter)
+
     imgname = imgname[:-1] + ".fits"
+
+    if directory is None:
+        directory = '.'
 
     path = Path(directory) / imgname
 
@@ -54,8 +85,55 @@ def mkdir(fpath, mode=0o777, parents=True, exist_ok=True):
     Path.mkdir(fpath, mode=mode, parents=parents, exist_ok=exist_ok)
 
 
+def cards_airmass(am, full):
+    ''' Gives airmass and alt-az related header cards.
+    '''
+    amstr = ("TRIPOLpy's airmass calculation uses the same algorithm "
+             + "as IRAF: From 'Some Factors Affecting the Accuracy of "
+             + "Stellar Photometry with CCDs' by P. Stetson, DAO preprint, "
+             + "September 1988.")
+
+    # At some times, hdr["AIRMASS"] = am, for example, did not work for some
+    # reasons which I don't know.... So I used Card. - YPBach 2018-05-04
+    cs = [Card("AIRMASS", am, "Aaverage airmass (Stetson 1988)"),
+          Card("ALT", full["alt"][0],
+               "Altitude (start of the exposure)"),
+          Card("AZ", full["az"][0], "Azimuth (start of the exposure)"),
+          Card("ALT_MID", full["alt"][1],
+               "Altitude (midpoint of the exposure)"),
+          Card("AZ_MID", full["az"][1],
+               "Azimuth (midpoint of the exposure)"),
+          Card("ALT_END", full["alt"][2],
+               "Altitude (end of the exposure)"),
+          Card("AZ_END", full["az"][2],
+               "Azimuth (end of the exposure)"),
+          Card("COMMENT", amstr),
+          Card("HISTORY", "ALT-AZ calculated from TRIPOLpy."),
+          Card("HISTORY", "AIRMASS calculated from TRIPOLpy.") ]
+
+    return cs
+
+
+def cards_gain_rdnoise(filter_str):
+    cs = [Card("GAIN",
+               GAIN_EPADU[filter_str][LATEST],
+               f"/ [e-/ADU] The electron gain factor ({LATEST})."),
+          Card("RDNOISE",
+               RDNOISE_E[filter_str][LATEST],
+               f"/ [e-] The (Gaussian) read noise ({LATEST})."),
+          Card("COMMENT",
+               (f"Gain history ({filter_str}-band CCD): "
+                + f"{GAIN_EPADU[filter_str]} e/ADU.")),
+          Card("COMMENT",
+               (f"Read noise history ({filter_str}-band CCD): "
+                + f"{RDNOISE_E[filter_str]} e."))]
+
+    return cs
+
+
+
 def fits_newpath(fpath, rename_by, mkdir_by=None, header=None, delimiter='_',
-    ext='fits'):
+                 ext='fits'):
     ''' Gives the new path of the FITS file from header.
     Parameters
     ----------
@@ -77,7 +155,7 @@ def fits_newpath(fpath, rename_by, mkdir_by=None, header=None, delimiter='_',
     '''
 
     if header is None:
-        header=fits.getheader(fpath)
+        header = fits.getheader(fpath)
 
     # First make file name without parent path
     newname = ""
@@ -97,6 +175,7 @@ def fits_newpath(fpath, rename_by, mkdir_by=None, header=None, delimiter='_',
 
     return newpath
 
+
 def key_mapper(header, keymap, deprecation=False):
     ''' Update the header to meed the standard (keymap).
     Parameters
@@ -111,14 +190,23 @@ def key_mapper(header, keymap, deprecation=False):
         ``Deprecated. See <standard_key>.``.
     '''
     newhdr = header.copy()
-    for k, v in keymap.items():
-        if (v is not None) and (k not in newhdr):
-            comment_ori = newhdr.comments[v]
-            newhdr[k] = (newhdr[v], comment_ori)
-            if deprecation:
-                newhdr.comments[v] = f"Deprecated. See {k}"
-    return newhdr
+    for k_new, k_old in keymap.items():
+        # if k_new already in the header, only deprecate k_old.
+        # if not, copy k_old to k_new and deprecate k_old.
+        if k_old is not None:
+            if k_new in newhdr:
+                if deprecation:
+                    newhdr.comments[k_old] = f"Deprecated. See {k_new}"
+            else:
+                try:
+                    comment_ori = newhdr.comments[k_old]
+                    newhdr[k_new] = (newhdr[k_old], comment_ori)
+                    if deprecation:
+                        newhdr.comments[k_old] = f"Deprecated. See {k_new}"
+                except KeyError:
+                    pass
 
+    return newhdr
 
 
 def fitsrenamer(fpath=None, header=None, newtop=None, rename_by=["OBJECT"],
@@ -402,6 +490,7 @@ def airmass_hdr(header=None, ra=None, dec=None, ut=None, exptime=None,
 
     return result
 
+
 def stack_FITS(filelist, extension, unit='adu', trim_fits_section=None,
                type_key=None, type_val=None):
     ''' Stacks the FITS files specified in filelist
@@ -585,7 +674,6 @@ def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
         print(dict(**kwargs))
         return
 
-
     def _normalize_exptime(ccdlist, exposure_key):
         _ccdlist = ccdlist.copy()
         exptimes = []
@@ -680,6 +768,37 @@ def get_from_header(header, key, unit=None, verbose=True,
     default: str, int, float, ..., or Quantity
         The default if not found from the header.
     '''
+
+    def _change_to_quantity(x, desired=None):
+        ''' Change the non-Quantity object to astropy Quantity.
+        Parameters
+        ----------
+        x: object changable to astropy Quantity
+            The input to be changed to a Quantity. If a Quantity is given, ``x`` is
+            changed to the ``desired``, i.e., ``x.to(desired)``.
+        desired: astropy Unit, optional
+            The desired unit for ``x``.
+        Returns
+        -------
+        ux: Quantity
+        Note
+        ----
+        If Quantity, transform to ``desired``. If ``desired = None``, return it as
+        is. If not Quantity, multiply the ``desired``. ``desired = None``, return
+        ``x`` with dimensionless unscaled unit.
+        '''
+        if not isinstance(x, u.quantity.Quantity):
+            if desired is None:
+                ux = x * u.dimensionless_unscaled
+            else:
+                ux = x * desired
+        else:
+            if desired is None:
+                ux = x
+            else:
+                ux = x.to(desired)
+        return ux
+
     value = None
 
     try:
@@ -689,7 +808,7 @@ def get_from_header(header, key, unit=None, verbose=True,
 
     except KeyError:
         if default is not None:
-            value = astropy_util.change_to_quantity(default, desired=unit)
+            value = _change_to_quantity(default, desired=unit)
             warnings.warn(f"{key} not found in header: setting to {default}.")
 
     if unit is not None:
@@ -697,9 +816,10 @@ def get_from_header(header, key, unit=None, verbose=True,
 
     return value
 
+
 def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None,
                 fits_section=None, calc_err=False, unit='adu', gain=None,
-                ronoise=None, gain_key="GAIN", ronoise_key="RONOISE",
+                ronoise=None, gain_key="GAIN", ronoise_key="RDNOISE",
                 gain_unit=u.electron / u.adu, ronoise_unit=u.electron,
                 dark_exposure=None, data_exposure=None, exposure_key="EXPTIME",
                 exposure_unit=u.s, dark_scale=False,
@@ -711,27 +831,34 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
     ----------
     ccd: array-like
         The ccd to be processed.
-    output: path-like
-        Saving directory
+    output: str or path-like
+        Saving path
     '''
 
     proc = CCDData(ccd)
     hdr_new = proc.header
+    hdr_new["PROCESS"] = ("", "The processed history: see comment.")
+    hdr_new.add_comment("PROCESS key can be B (bias), D (dark), F (flat), "
+                        + "T (trim), W (WCS).")
 
     if mbiaspath is None:
         do_bias = False
-        # mbias = CCDData(np.zeros_like(ccd), unit=unit)
+        mbias = CCDData(np.zeros_like(ccd), unit=proc.unit)
+
     else:
         do_bias = True
         mbias = CCDData.read(mbiaspath, unit=unit)
+        hdr_new["PROCESS"] += "B"
         hdr_new.add_history(f"Bias subtracted using {mbiaspath}")
 
     if mdarkpath is None:
         do_dark = False
-        mdark = None
+        mdark = CCDData(np.zeros_like(ccd), unit=proc.unit)
+
     else:
         do_dark = True
         mdark = CCDData.read(mdarkpath, unit=unit)
+        hdr_new["PROCESS"] += "D"
         hdr_new.add_history(f"Dark subtracted using {mdarkpath}")
         if dark_scale:
             hdr_new.add_history(
@@ -739,10 +866,12 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
 
     if mflatpath is None:
         do_flat = False
-        # mflat = CCDData(np.ones_like(ccd), unit=unit)
+        mflat = CCDData(np.ones_like(ccd), unit=proc.unit)
+
     else:
         do_flat = True
         mflat = CCDData.read(mflatpath)
+        hdr_new["PROCESS"] += "F"
         hdr_new.add_history(f"Flat corrected using {mflatpath}")
 
     if fits_section is not None:
@@ -750,6 +879,7 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
         mbias = trim_image(mbias, fits_section)
         mdark = trim_image(mdark, fits_section)
         mflat = trim_image(mflat, fits_section)
+        hdr_new["PROCESS"] += "T"
         hdr_new.add_history(f"Trim by FITS section {fits_section}")
 
     if do_bias:
@@ -772,19 +902,19 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
     if calc_err:
         if gain is None:
             gain = get_from_header(hdr_new, gain_key,
-                                    unit=gain_unit,
-                                    verbose=verbose,
-                                    default=1.).value
+                                   unit=gain_unit,
+                                   verbose=verbose,
+                                   default=1.).value
 
         if ronoise is None:
             ronoise = get_from_header(hdr_new, ronoise_key,
-                                    unit=ronoise_unit,
-                                    verbose=verbose,
-                                    default=0.).value
+                                      unit=ronoise_unit,
+                                      verbose=verbose,
+                                      default=0.).value
 
         err = make_errmap(proc,
-                                    gain_epadu=gain,
-                                    subtracted_dark=mdark)
+                          gain_epadu=gain,
+                          subtracted_dark=mdark)
 
         proc.uncertainty = StdDevUncertainty(err)
         errstr = (f"Error calculated using gain = {gain:.3f} [e/ADU] and "
@@ -810,6 +940,7 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
         proc.write(output, output_verify=output_verify, overwrite=overwrite)
 
     return proc
+
 
 def make_errmap(ccd, gain_epadu, ronoise_electron=0,
                 subtracted_dark=None):
@@ -874,9 +1005,8 @@ def make_summary(filelist, extension=0, fname_option='relative',
     fname_option: str {'absolute', 'relative', 'name'}
         Whether to save full absolute/relative path or only the filename.
 
-    ouput: str or path-like
-        The directory and file name of the output summary file. Leave blank
-        for not saving anything.
+    output: str or path-like
+        The directory and file name of the output summary file.
 
     format: str
         The astropy.table.Table output format.
@@ -889,13 +1019,17 @@ def make_summary(filelist, extension=0, fname_option='relative',
         ``['U80'] * len(keywords)`` will be used. Otherwise, it should have
         the same length with ``keywords``.
 
-    example_header: path-like
+    example_header: str or path-like
         The path including the filename of the output summary text file.
 
     sort_by: str
         The column name to sort the results. It can be any element of
         ``keywords`` or ``'file'``, which sorts the table by the file name.
     """
+
+    if len(filelist) == 0:
+        print("No FITS file found.")
+        return
 
     def _get_fname(path):
         if fname_option == 'relative':
@@ -948,6 +1082,10 @@ def make_summary(filelist, extension=0, fname_option='relative',
             keywords.append(key_i)
         if verbose:
             print(str_keywords.format(len(keywords)))
+#            except fits.VerifyError:
+#                str_unparsable = '{:d}-th key is skipped since it is unparsable.'
+#                print(str_unparsable.format(i))
+#                continue
 
     # Initialize
     if len(dtypes) == 0:
@@ -977,19 +1115,23 @@ def make_summary(filelist, extension=0, fname_option='relative',
         summarytab.add_row(row)
         hdu.close()
 
-    # Attache the file name, and then sort by file name.
+    # Attache the file name, and then sort.
     fnames = Column(data=fnames, name='file')
     summarytab.add_column(fnames, index=0)
     summarytab.sort(sort_by)
 
-    # sort by a key if ``sort_by`` is given
-    if ((sort_by != '') and (sort_by != None)):
-        summarytab.sort('file')
+    tmppath = Path('tmp.csv')
+    summarytab.write(tmppath, format=format)
+    summarytab = Table.read(tmppath, format=format)
 
-    if output is not None:
+    if output is None or output == '':
+        tmppath.unlink()
+
+    else:
+        output = Path(output)
         if verbose:
             print(str_filesave.format(str(output)))
-        summarytab.write(output, format=format, overwrite=True)
+        tmppath.rename(output)
 
     return summarytab
 
