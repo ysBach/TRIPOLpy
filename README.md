@@ -415,6 +415,10 @@ For all the information for the standard stars (SDSS u'g'r'i'z'), see [here](htt
 
 
 
+## Bug Report
+
+Please open an issue [here](https://github.com/ysBach/TRIPOLpy/issues)!
+
 
 
 ## Acknowledgement
