@@ -35,7 +35,7 @@ We tested TRIPOLpy under the following conditions:
 * astropy 3.0.1
 * ccdproc 1.3
 
-
+Code validity tested on Windows 10 and Ubuntu 16.04.
 
 ## Installation
 
