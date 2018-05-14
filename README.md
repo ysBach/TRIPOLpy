@@ -15,11 +15,13 @@ This package is developed using Python 3.6 since it (is)
 
 * Free (Python 2/3, IRAF)
 * Stable (Python 2/3, IRAF, IDL)
-* OS independent (Python 2/3, IDL)
-* Version controllable via simple platform (Python 2/3 via git + conda)
-* Has long term plans to be managed by professionals (Python 3, IDL)
+* OS independent (Python 2/3, julia, IDL)
+* Version controllable via simple platform (julia, Python 2/3 via git + conda)
+* Has long term plans to be managed by professionals (Python 3, julia, IDL)
 * Will be used in future astronomy projects (Python 3, julia, C++)
-* Has strong astronomy-related package support (~~low-level languages~~)
+* Has strong user-friendly astronomy-related package support (~~low-level languages~~)
+
+The only remaining language is Python 3. We selected Python 3.6 since it will be the only language supported by astropy 4.0 LTS (see [astropy APE 10](https://github.com/astropy/astropy-APEs/blob/master/APE10.rst)).
 
 
 
@@ -105,7 +107,7 @@ summary_reduced = p.do_preproc(savedir=datedir / "processed")
 
 It then automatically finds bias, dark, and flat images for each CCD, exposure time (dark only), and each HWP angle (for flat only). The object-like images, i.e., ``OBJECT`` not starts with bias, dark, flat, or test, are preprocessed automatically and saved to ``180417/processed`` directory.
 
-The whole process took **~ 30 sec for 424 images** obtained on 2018-04-17 KST.
+The whole process took **about 30 sec for 424 images** obtained on 2018-04-17 KST.
 
 
 
@@ -314,15 +316,14 @@ After running the code,
 
 * ``summary``: The summary csv file for the original raw data and only the reduced data:
 
-  ![](/home/aaa/Google_Drive/github/TRIPOLpy/summary.png)
+  ![](./summary.png)
 
-* ``calibration/``: The calibration images directory, e.g., bias, dark, and flat. Bias contains filter name, dark contains filter name and the exposure time, and flat contains filter name and HWP angle in their filenames.
+* ``calibration/``: The calibration images directory, e.g., bias (``bias_<FILTER>.fits``), dark (``dark_<FILTER>_<EXPTIME>.fits``), and flat (``flat_<FILTER>_<RET-ANG1>.fits``). 
 
-* ``processed/``: The processed data directory.
+* ``processed/``: The processed data directory (``<FILTER>_<COUNTER>_<OBJECT>_<EXPTIME>_<RET-ANG1>.fits``).
 
-* ``rawdata/``: The original FITS are moved to ``rawdata/archive/``. The original FITS but with updated header and filename are moved to ``rawdata/<FILTER>/<OBJECT>`` with filenames of ``<FILTER>_<COUNTER>_<OBJECT>_<EXPTIME>_<RET-ANG1>`` where ``<KEY>`` is the header key ``KEY``.
+* ``rawdata/``: The original FITS are moved to ``rawdata/archive/``. The original FITS but with updated header and filename are moved to ``rawdata/<FILTER>/<OBJECT>`` with filenames of ``<FILTER>_<COUNTER>_<OBJECT>_<EXPTIME>_<RET-ANG1>``. Useless images, e.g., ``OBJECT`` starts with ``TEST`` or i-band image when taking g-band flat, etc are moved to ``rawdata/useless``.
 
-* ``rawdata/useless``: Useless images, e.g., ``OBJECT`` starts with ``TEST`` or i-band image when taking g-band flat, etc.
 
 
 
