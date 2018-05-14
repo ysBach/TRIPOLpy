@@ -358,16 +358,18 @@ The headers are also updated:
    HISTORY AIRMASS calculated from TRIPOLpy.                                       
    ```
 
-3. **Miscellaneous**: `BUNIT`, `COUNTER` are added for future information and `RET-ANG1` is inferred from the OBJECT if it does not exist in the original file.
+3. **Miscellaneous**: `BUNIT`, `COUNTER` are added for future information and `RET-ANG1` is inferred from the ``OBJECT`` if it does not exist in the original file. ``PROCESS`` indicates which processes have been done (see ``COMMENT`` and ``HISTORY``)
 
-   ```
+   ```COMMENT PROCESS key can be B (bias), D (dark), F (flat), T (trim), W (WCS).     
    COUNTER = '0012    '           / Image counter                                  
    BUNIT   = 'ADU     '           / Pixel value unit                  
-   RET-ANG1=                  0.0 / The half-wave plate angle.                     
+   RET-ANG1=                  0.0 / The half-wave plate angle.          
+   PROCESS = 'BDF     '           / The processed history: see comment.            
+   COMMENT PROCESS key can be B (bias), D (dark), F (flat), T (trim), W (WCS).     
+   HISTORY Bias subtracted using 180417/calibration/bias_r.fits                    
+   HISTORY Dark subtracted using 180417/calibration/dark_r_120.0.fits              
+   HISTORY Flat corrected using 180417/calibration/flat_r_0.0.fits        
    ```
-
-   
-
 
 
 
