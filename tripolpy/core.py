@@ -117,10 +117,10 @@ def cards_airmass(am, full):
 def cards_gain_rdnoise(filter_str):
     cs = [Card("GAIN",
                GAIN_EPADU[filter_str][LATEST],
-               f"/ [e-/ADU] The electron gain factor ({LATEST})."),
+               f"[e-/ADU] The electron gain factor ({LATEST})."),
           Card("RDNOISE",
                RDNOISE_E[filter_str][LATEST],
-               f"/ [e-] The (Gaussian) read noise ({LATEST})."),
+               f"[e-] The (Gaussian) read noise ({LATEST})."),
           Card("COMMENT",
                (f"Gain history ({filter_str}-band CCD): "
                 + f"{GAIN_EPADU[filter_str]} e/ADU.")),
