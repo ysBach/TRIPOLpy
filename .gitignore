@@ -37,7 +37,6 @@ distribute-*.tar.gz
 *~
 .project
 .pydevproject
-.vscode
 .settings
 .coverage
 cover

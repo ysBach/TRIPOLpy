@@ -43,6 +43,14 @@ Code validity tested on Windows 10 and Ubuntu 16.04.
 
 Go download [Anaconda 3](https://www.anaconda.com/download/) of appropriate OS you are using. Install as the website says.
 
+> **IMPORTANT**
+>
+> For Windows users: while installing, **CHECK** the checkbox which includes "PATH blahblah"
+>
+> For UNIX machine: Answer **yes** to the path related question.
+
+
+
 Go download [Git](https://git-scm.com/downloads) for your OS and install it.
 
 After installations, turn on a terminal (Windows users: ``win`` key -> Search for Git Bash or Anaconda Prompt) 
