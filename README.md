@@ -95,15 +95,15 @@ Short code to do the calibration (detailed: see below):
 
 ```python
 from tripolpy import preprocessor
-from astropy.table import Table
 from pathlib import Path
+
 datedir = Path("180417")
 p = preprocessor.Preprocessor(topdir=datedir, rawdir = datedir / "rawdata")
 p.organize_tripol(archive_dir=datedir / "rawdata" / "archive")
 p.make_bias(savedir=datedir / "calibration")
 
 # =============================================================================
-# NOTE: If you observed in before May, 
+# NOTE: If you observed before May, 
 # =============================================================================
 #p.make_bias(savedir=datedir / "calibration",
 #            hdr_keys=["OBJECT", "EXPTIME"], # Default is "OBJECT"
@@ -125,7 +125,6 @@ The **same code** with longer description comments is presented below:
 
 ```python
 from tripolpy import preprocessor
-from astropy.table import Table
 from pathlib import Path
 
 # The date directory (relative to your current working directory)
@@ -168,7 +167,7 @@ p.make_bias(savedir=datedir / "calibration")
 #            comb_kwargs=MEDCOMB_KEYS)
 
 # =============================================================================
-# NOTE: If you observed in before May, 
+# NOTE: If you observed before May, 
 # =============================================================================
 #p.make_bias(savedir=datedir / "calibration",
 #            hdr_keys=["OBJECT", "EXPTIME"], # Default is "OBJECT"
