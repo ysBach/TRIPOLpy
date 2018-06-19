@@ -16,10 +16,10 @@ classifiers = ["Intended Audience :: Science/Research",
 
 setup(
     name="tripolpy",
-    version="0.1",
+    version="0.1.1",
     author="Yoonsoo P. Bach",
     author_email="dbstn95@gmail.com",
-    description="Data reducing package for TRIPOL at SNU",
+    description="Data reduction package for TRIPOL at SNU",
     license="MIT",
     keywords="",
     url="https://github.com/ysBach/TRIPOLpy",

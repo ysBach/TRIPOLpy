@@ -32,21 +32,21 @@ MEDCOMB_KEYS = dict(overwrite=True,
                     reject_method=None,
                     combine_uncertainty_function=None)
 
-LATEST = "Apr2018"
+LATEST = "Jun2018"
 
 GAIN_EPADU = dict(g=dict(default=1.82,
-                         Apr2018=1.82),
+                         Jun2018=1.79),
                   r=dict(default=1.05,
-                         Apr2018=1.05),
+                         Jun2018=1.71),
                   i=dict(default=2.00,
-                         Apr2018=2.00))
+                         Jun2018=2.01))
 
 RDNOISE_E = dict(g=dict(default=0,
-                        Apr2018=1),
+                        Jun2018=32.1),
                  r=dict(default=0,
-                        Apr2018=1),
+                        Jun2018=36.5),
                  i=dict(default=0,
-                        Apr2018=1))
+                        Jun2018=18.7))
 
 KEYMAP = {"EXPTIME": 'EXPOS', "GAIN": 'EGAIN', "OBJECT": 'OBJECT',
           "FILTER": 'FILTER', "EQUINOX": 'EPOCH',
