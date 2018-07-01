@@ -92,7 +92,7 @@ class Preprocessor():
 
     # TRIPOL specific
     def organize_tripol(self,
-                        rename_by=["FILTER", "COUNTER", "OBJECT", "EXPOS", "RET-ANG1"],
+                        rename_by=["COUNTER", "FILTER", "OBJECT", "EXPOS", "RET-ANG1"],
                         mkdir_by=["FILTER", "OBJECT"], delimiter='_',
                         archive_dir=None, verbose=False):
         ''' Rename FITS files after updating theur headers.
