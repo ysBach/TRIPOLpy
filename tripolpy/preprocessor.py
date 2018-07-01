@@ -565,19 +565,19 @@ class Preprocessor():
 
             try:
                 biaspath = self.biaspaths[bias_vals]
-            except KeyError:
+            except (KeyError, TypeError):
                 biaspath = None
                 warnings.warn(f"Bias with {bias_vals} not available.")
 
             try:
                 darkpath = self.darkpaths[dark_vals]
-            except KeyError:
+            except (KeyError, TypeError):
                 darkpath = None
                 warnings.warn(f"Dark with {dark_vals} not available.")
 
             try:
                 flatpath = self.flatpaths[flat_vals]
-            except KeyError:
+            except (KeyError, TypeError):
                 flatpath = None
                 warnings.warn(f"Flat with {flat_vals} not available.")
 
