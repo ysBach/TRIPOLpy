@@ -24,7 +24,7 @@ __all__ = ["KEYMAP", "GAIN_EPADU", "RDNOISE_E", "USEFUL_KEYS", "MEDCOMB_KEYS",
            "fits_newpath", "fitsrenamer", "load_if_exists",
            "stack_FITS", "calc_airmass", "airmass_obs", "airmass_hdr",
            "CCDData_astype", "combine_ccd", "make_errmap", "bdf_process",
-           "make_summary", "Gfit2hist", "bias2ronoise"]
+           "make_summary", "Gfit2hist", "bias2rdnoise"]
 
 MEDCOMB_KEYS = dict(overwrite=True,
                     unit=None,
@@ -819,8 +819,8 @@ def get_from_header(header, key, unit=None, verbose=True,
 
 def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None,
                 fits_section=None, calc_err=False, unit='adu', gain=None,
-                ronoise=None, gain_key="GAIN", ronoise_key="RDNOISE",
-                gain_unit=u.electron / u.adu, ronoise_unit=u.electron,
+                rdnoise=None, gain_key="GAIN", rdnoise_key="RDNOISE",
+                gain_unit=u.electron / u.adu, rdnoise_unit=u.electron,
                 dark_exposure=None, data_exposure=None, exposure_key="EXPTIME",
                 exposure_unit=u.s, dark_scale=False,
                 min_value=None, norm_value=None,
@@ -906,9 +906,9 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
                                    verbose=verbose,
                                    default=1.).value
 
-        if ronoise is None:
-            ronoise = get_from_header(hdr_new, ronoise_key,
-                                      unit=ronoise_unit,
+        if rdnoise is None:
+            rdnoise = get_from_header(hdr_new, rdnoise_key,
+                                      unit=rdnoise_unit,
                                       verbose=verbose,
                                       default=0.).value
 
@@ -918,7 +918,7 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
 
         proc.uncertainty = StdDevUncertainty(err)
         errstr = (f"Error calculated using gain = {gain:.3f} [e/ADU] and "
-                  + f"rdnoise = {ronoise:.3f} [e].")
+                  + f"rdnoise = {rdnoise:.3f} [e].")
         hdr_new.add_history(errstr)
 
     if do_flat:
@@ -942,7 +942,7 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
     return proc
 
 
-def make_errmap(ccd, gain_epadu, ronoise_electron=0,
+def make_errmap(ccd, gain_epadu, rdnoise_electron=0,
                 subtracted_dark=None):
     ''' Calculate the usual error map.
     Parameters
@@ -954,8 +954,8 @@ def make_errmap(ccd, gain_epadu, ronoise_electron=0,
         ``subtracted_dark = None`` (default).
     gain: float, array-like, or Quantity
         The effective gain factor in ``electron/ADU`` unit.
-    ronoise: float, array-like, or Quantity, optional.
-        The readout noise. Put ``ronoise=0`` will calculate only the Poissonian
+    rdnoise: float, array-like, or Quantity, optional.
+        The readout noise. Put ``rdnoise=0`` will calculate only the Poissonian
         error. This is useful when generating noise map for dark frames.
     subtracted_dark: array-like
         The subtracted dark map.
@@ -970,8 +970,8 @@ def make_errmap(ccd, gain_epadu, ronoise_electron=0,
     if isinstance(gain_epadu, u.Quantity):
         gain_epadu = gain_epadu.to(u.electron / u.adu).value
 
-    if isinstance(ronoise_electron, u.Quantity):
-        ronoise_electron = ronoise_electron.to(u.electron)
+    if isinstance(rdnoise_electron, u.Quantity):
+        rdnoise_electron = rdnoise_electron.to(u.electron)
 
     # Get Poisson noise
     if subtracted_dark is not None:
@@ -982,9 +982,9 @@ def make_errmap(ccd, gain_epadu, ronoise_electron=0,
         data += dark
 
     var_Poisson = data / gain_epadu  # (data * gain) / gain**2 to make it ADU
-    var_ROnoise = (ronoise_electron / gain_epadu)**2
+    var_RDnoise = (rdnoise_electron / gain_epadu)**2
 
-    errmap = np.sqrt(var_Poisson + var_ROnoise)
+    errmap = np.sqrt(var_Poisson + var_RDnoise)
 
     return errmap
 
@@ -1147,7 +1147,7 @@ def Gfit2hist(data):
     return fitG
 
 
-def bias2ronoise(data):
+def bias2rdnoise(data):
     ''' Infer readout noise from bias image.
     '''
     fitG = Gfit2hist(data)
