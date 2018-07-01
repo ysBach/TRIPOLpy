@@ -56,35 +56,35 @@ class Preprocessor():
 
         if self.newpaths is None:
             try:
-                with open("newpaths.pkl", 'rb') as pkl:
+                with open(self.topdir / "newpaths.pkl", 'rb') as pkl:
                     self.newpaths = pickle.load(pkl)
             except FileNotFoundError:
                 pass
 
         if self.objpaths is None:
             try:
-                with open("objpaths.pkl", 'rb') as pkl:
+                with open(self.topdir / "objpaths.pkl", 'rb') as pkl:
                     self.objpaths = pickle.load(pkl)
             except FileNotFoundError:
                 pass
 
         if self.biaspaths is None:
             try:
-                with open("biaspaths.pkl", 'rb') as pkl:
+                with open(self.topdir / "biaspaths.pkl", 'rb') as pkl:
                     self.biaspaths = pickle.load(pkl)
             except FileNotFoundError:
                 pass
 
         if self.darkpaths is None:
             try:
-                with open("darkpaths.pkl", 'rb') as pkl:
+                with open(self.topdir / "darkpaths.pkl", 'rb') as pkl:
                     self.darkpaths = pickle.load(pkl)
             except FileNotFoundError:
                 pass
 
         if self.flatpaths is None:
             try:
-                with open("flatpaths.pkl", 'rb') as pkl:
+                with open(self.topdir / "flatpaths.pkl", 'rb') as pkl:
                     self.flatpaths = pickle.load(pkl)
             except FileNotFoundError:
                 pass
@@ -534,6 +534,7 @@ class Preprocessor():
                    bias_grouped_by=["FILTER"],
                    dark_grouped_by=["FILTER", "EXPTIME"],
                    flat_grouped_by=["FILTER", "RET-ANG1"],
+                   do_crrej=False, verbose_crrej=False,
                    verbose=True):
 
         self.initialize_self()
@@ -587,7 +588,9 @@ class Preprocessor():
                                unit=None,
                                mbiaspath=biaspath,
                                mdarkpath=darkpath,
-                               mflatpath=flatpath)
+                               mflatpath=flatpath,
+                               do_crrej=do_crrej, 
+                               verbose_crrej=verbose_crrej)
 
         self.reducedpaths = savepaths
 

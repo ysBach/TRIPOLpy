@@ -20,6 +20,7 @@ from ccdproc import (combine, trim_image,
 from ccdproc import sigma_func as ccdproc_mad2sigma_func
 
 __all__ = ["KEYMAP", "GAIN_EPADU", "RDNOISE_E", "USEFUL_KEYS", "MEDCOMB_KEYS",
+           "LACOSMIC",
            "imgpath", "mkdir", "cards_airmass", "cards_gain_rdnoise",
            "fits_newpath", "fitsrenamer", "load_if_exists",
            "stack_FITS", "calc_airmass", "airmass_obs", "airmass_hdr",
@@ -47,6 +48,11 @@ RDNOISE_E = dict(g=dict(default=0,
                         Jun2018=36.5),
                  i=dict(default=0,
                         Jun2018=18.7))
+
+LACOSMIC = dict(sigclip=4.5, sigfrac=0.3, objlim=5.0, # gain=1.0, readnoise=6.5,
+                satlevel=np.inf, pssl=0.0, niter=4, sepmed=False, 
+                cleantype='medmask', fsmode='median', psfmodel='gauss', 
+                psffwhm=2.5, psfsize=7, psfk=None, psfbeta=4.765)
 
 KEYMAP = {"EXPTIME": 'EXPOS', "GAIN": 'EGAIN', "OBJECT": 'OBJECT',
           "FILTER": 'FILTER', "EQUINOX": 'EPOCH',
@@ -817,6 +823,7 @@ def get_from_header(header, key, unit=None, verbose=True,
     return value
 
 
+# TODO: put an option such that the crrej can be done either before/after the preprocessing..?
 def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None,
                 fits_section=None, calc_err=False, unit='adu', gain=None,
                 rdnoise=None, gain_key="GAIN", rdnoise_key="RDNOISE",
@@ -824,7 +831,8 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
                 dark_exposure=None, data_exposure=None, exposure_key="EXPTIME",
                 exposure_unit=u.s, dark_scale=False,
                 min_value=None, norm_value=None,
-                verbose=True, output_verify='fix', overwrite=True,
+                do_crrej=False, verbose_crrej=False,
+                verbose_bdf=True, output_verify='fix', overwrite=True,
                 dtype="float32"):
     ''' Do bias, dark and flat process.
     Parameters
@@ -839,7 +847,7 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
     hdr_new = proc.header
     hdr_new["PROCESS"] = ("", "The processed history: see comment.")
     hdr_new.add_comment("PROCESS key can be B (bias), D (dark), F (flat), "
-                        + "T (trim), W (WCS).")
+                        + "T (trim), W (WCS), C(CRrej).")
 
     if mbiaspath is None:
         do_bias = False
@@ -903,13 +911,13 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
         if gain is None:
             gain = get_from_header(hdr_new, gain_key,
                                    unit=gain_unit,
-                                   verbose=verbose,
+                                   verbose=verbose_bdf,
                                    default=1.).value
 
         if rdnoise is None:
             rdnoise = get_from_header(hdr_new, rdnoise_key,
                                       unit=rdnoise_unit,
-                                      verbose=verbose,
+                                      verbose=verbose_bdf,
                                       default=0.).value
 
         err = make_errmap(proc,
@@ -923,7 +931,7 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
 
     if do_flat:
         if calc_err:
-            if (mflat.uncertainty is not None) and verbose:
+            if (mflat.uncertainty is not None) and verbose_bdf:
                 print("Flat has uncertainty frame: Propagate in arithmetics.")
                 hdr_new.add_history(
                     "Flat had uncertainty and is also propagated.")
@@ -932,6 +940,35 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
                             mflat,
                             min_value=min_value,
                             norm_value=norm_value)
+
+    # Do very simple L.A. Cosmic default crrejection
+    if do_crrej:
+        from astroscrappy import detect_cosmics
+
+        if gain is None:
+            gain = get_from_header(hdr_new, gain_key,
+                                   unit=gain_unit,
+                                   verbose=verbose_bdf,
+                                   default=1.0).value
+
+        if rdnoise is None:
+            rdnoise = get_from_header(hdr_new, rdnoise_key,
+                                      unit=rdnoise_unit,
+                                      verbose=verbose_bdf,
+                                      default=6.5).value
+                                      
+        crmask, cleanarr = detect_cosmics(proc.data, inmask=proc.mask,
+                                          gain=gain, readnoise=rdnoise,
+                                          **LACOSMIC, verbose=verbose_crrej)
+
+        # create the new ccd data object
+        proc.data = cleanarr
+        if proc.mask is None:
+            proc.mask = crmask
+        else:
+            proc.mask = proc.mask + crmask
+        hdr_new["PROCESS"] += "C"
+        hdr_new.add_history(f"Cosmic-Ray rejected by astroscrappy, LACOSMIC default setting.")
 
     proc = CCDData_astype(proc, dtype=dtype)
     proc.header = hdr_new
