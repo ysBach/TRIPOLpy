@@ -441,6 +441,9 @@ class Preprocessor():
             for p in list(savepaths.values()):
                 ll.write(f"{str(p)}\n")
 
+        with open(self.topdir / 'darkpaths.pkl', 'wb') as pkl:
+            pickle.dump(savepaths, pkl)    
+        
         self.darkpaths = savepaths
 
 
@@ -535,7 +538,7 @@ class Preprocessor():
                    dark_grouped_by=["FILTER", "EXPTIME"],
                    flat_grouped_by=["FILTER", "RET-ANG1"],
                    do_crrej=False, verbose_crrej=False,
-                   verbose=True):
+                   verbose_bdf=True, verbose_summary=False):
 
         self.initialize_self()
 
@@ -590,6 +593,7 @@ class Preprocessor():
                                mdarkpath=darkpath,
                                mflatpath=flatpath,
                                do_crrej=do_crrej, 
+                               verbose_bdf=verbose_bdf,
                                verbose_crrej=verbose_crrej)
 
         self.reducedpaths = savepaths
@@ -598,4 +602,4 @@ class Preprocessor():
                             output=self.topdir / "summary_reduced.csv",
                             format='ascii.csv',
                             keywords=self.summary_keywords + ["PROCESS"],
-                            verbose=verbose)
+                            verbose=verbose_summary)
