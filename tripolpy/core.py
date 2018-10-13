@@ -50,17 +50,17 @@ RDNOISE_E = dict(g=dict(default=0,
                         Jun2018=18.7))
 
 LACOSMIC = dict(sigclip=4.5, sigfrac=0.3, objlim=5.0, # gain=1.0, readnoise=6.5,
-                satlevel=np.inf, pssl=0.0, niter=4, sepmed=False, 
-                cleantype='medmask', fsmode='median', psfmodel='gauss', 
+                satlevel=np.inf, pssl=0.0, niter=4, sepmed=False,
+                cleantype='medmask', fsmode='median', psfmodel='gauss',
                 psffwhm=2.5, psfsize=7, psfk=None, psfbeta=4.765)
 
 KEYMAP = {"EXPTIME": 'EXPOS', "GAIN": 'EGAIN', "OBJECT": 'OBJECT',
           "FILTER": 'FILTER', "EQUINOX": 'EPOCH',
           "DATE-OBS": 'DATE', "RDNOISE": None}
 
-USEFUL_KEYS = ["EXPTIME", "FILTER", "DATE-OBS", "RET-ANG1",
-               "OBJECT", "EPOCH", "RA", "DEC", "ALT", "AZ", "AIRMASS"]
-
+USEFUL_KEYS = ["EXPTIME", "FILTER", "DATE-OBS", "RET-ANG1", "CCD_TEMP",
+               "CCD_COOL", "OBJECT", "EPOCH", "RA", "DEC", "ALT", "AZ",
+               "AIRMASS"]
 
 def imgpath(vals, delimiter='_', directory=None):
     ''' Gives the image path.
@@ -956,7 +956,7 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
                                       unit=rdnoise_unit,
                                       verbose=verbose_bdf,
                                       default=6.5).value
-                                      
+
         crmask, cleanarr = detect_cosmics(proc.data, inmask=proc.mask,
                                           gain=gain, readnoise=rdnoise,
                                           **LACOSMIC, verbose=verbose_crrej)
