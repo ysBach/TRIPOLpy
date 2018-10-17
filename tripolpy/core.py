@@ -1,5 +1,7 @@
 import warnings
 from pathlib import Path
+import shutil
+import os
 
 import numpy as np
 from scipy.stats import itemfreq
@@ -61,6 +63,31 @@ KEYMAP = {"EXPTIME": 'EXPOS', "GAIN": 'EGAIN', "OBJECT": 'OBJECT',
 USEFUL_KEYS = ["EXPTIME", "FILTER", "DATE-OBS", "RET-ANG1", "CCD_TEMP",
                "CCD_COOL", "OBJECT", "EPOCH", "RA", "DEC", "ALT", "AZ",
                "AIRMASS"]
+
+def reset_dir(topdir):
+    topdir = Path(topdir)
+    dirsattop = list(topdir.iterdir())
+    dirsatraw = list((topdir / "rawdata").iterdir())
+
+    for path in dirsattop:
+        if path.name != "rawdata":
+            if path.is_dir() and not path.name.startswith("."):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+
+    for path in dirsatraw:
+        if ((path.is_dir()) and (path.name != "archive")
+            and (path.name != "useless") and not (path.name.startswith("."))):
+            shutil.rmtree(path)
+        else:
+            fpaths = path.glob("*")
+            for fpath in fpaths:
+                os.rename(fpath, topdir / "rawdata" / fpath.name)
+
+    shutil.rmtree(topdir / "rawdata" / "archive")
+    shutil.rmtree(topdir / "rawdata" / "useless")
+
 
 def imgpath(vals, delimiter='_', directory=None):
     ''' Gives the image path.
@@ -601,8 +628,10 @@ def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
                 **kwargs):
     ''' Combining images
     Slight variant from ccdproc.
+    # TODO: For TRIPOL, add HISTORY or COMMENT which includes the list of
+    #   all the fits files name or just simply the COUNTER.
     # TODO: accept the input like ``sigma_clip_func='median'``, etc.
-    # TODO: normalize maybe useless..?
+    # TODO: normalize maybe useless..
     Parameters
     ----------
     fitslist: list of str, path-like
