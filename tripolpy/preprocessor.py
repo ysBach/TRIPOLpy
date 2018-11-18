@@ -9,7 +9,7 @@ from astropy.nddata import CCDData
 import pickle
 from .core import *
 
-__all__=["Preprocessor"]
+__all__ = ["Preprocessor"]
 
 
 class Preprocessor():
@@ -42,14 +42,13 @@ class Preprocessor():
         # newpaths: Renamed paths
         # redpaths: Reduced frames paths excluding BDF
 
-
     def initialize_self(self):
         ''' Initialization may convenient when process was halted amid.
         '''
         if self.summary is None:
             try:
                 self.summary = Table.read(str(self.topdir / "summary_raw.csv"),
-                                            format='ascii.csv')
+                                          format='ascii.csv')
                 self.newpaths = self.summary["file"].tolist()
             except FileNotFoundError:
                 pass
@@ -89,10 +88,10 @@ class Preprocessor():
             except FileNotFoundError:
                 pass
 
-
     # TRIPOL specific
     def organize_tripol(self,
-                        rename_by=["COUNTER", "FILTER", "OBJECT", "EXPOS", "RET-ANG1"],
+                        rename_by=["COUNTER", "FILTER",
+                                   "OBJECT", "EXPOS", "RET-ANG1"],
                         mkdir_by=["FILTER", "OBJECT"], delimiter='_',
                         archive_dir=None, verbose=False):
         ''' Rename FITS files after updating theur headers.
@@ -137,7 +136,7 @@ class Preprocessor():
 
             except IndexError:
                 print(f"{fpath.name} is not a regular TRIPOL FITS file. "
-                        + "Maybe a TL image.")
+                      + "Maybe a TL image.")
                 fpath.rename(uselessdir / fpath.name)
                 continue
 
@@ -193,22 +192,23 @@ class Preprocessor():
                 # FYI: flat MAY require airmass just for check (twilight/night)
                 try:
                     am, full = airmass_hdr(hdr,
-                                            ra_key="RA",
-                                            dec_key="DEC",
-                                            ut_key=KEYMAP["DATE-OBS"],
-                                            exptime_key=KEYMAP["EXPTIME"],
-                                            lon_key="LONGITUD",
-                                            lat_key="LATITUDE",
-                                            height_key="HEIGHT",
-                                            equinox="J2000",
-                                            frame='icrs',
-                                            full=True)
+                                           ra_key="RA",
+                                           dec_key="DEC",
+                                           ut_key=KEYMAP["DATE-OBS"],
+                                           exptime_key=KEYMAP["EXPTIME"],
+                                           lon_key="LONGITUD",
+                                           lat_key="LATITUDE",
+                                           height_key="HEIGHT",
+                                           equinox="J2000",
+                                           frame='icrs',
+                                           full=True)
                     amcards = cards_airmass(am, full)
                     [cards.append(c) for c in amcards]
 
                 except ValueError:
                     if verbose:
-                        print(f"{fpath} failed in airmass calculation: ValueError")
+                        print(
+                            f"{fpath} failed in airmass calculation: ValueError")
                         print(am, full)
                     pass
 
@@ -261,7 +261,6 @@ class Preprocessor():
                                     format='ascii.csv',
                                     keywords=self.summary_keywords,
                                     verbose=verbose)
-
 
     # TRIPOL specific
     def make_bias(self, savedir=None, hdr_keys="OBJECT", hdr_vals="bias",
@@ -333,7 +332,6 @@ class Preprocessor():
 
         self.biaspaths = savepaths
 
-
     def make_dark(self, savedir=None, hdr_keys="OBJECT", hdr_vals="dark",
                   bias_sub=True,
                   group_by=["FILTER", "EXPTIME"], bias_grouped_by=["FILTER"],
@@ -385,7 +383,8 @@ class Preprocessor():
 
         for k in bias_grouped_by:
             if k not in group_by:
-                raise KeyError("bias_grouped_by must be a subset of group_by for dark.")
+                raise KeyError(
+                    "bias_grouped_by must be a subset of group_by for dark.")
 
         if exposure_key not in group_by:
             warnings.warn("group_by is not None and does not include "
@@ -442,10 +441,9 @@ class Preprocessor():
                 ll.write(f"{str(p)}\n")
 
         with open(self.topdir / 'darkpaths.pkl', 'wb') as pkl:
-            pickle.dump(savepaths, pkl)    
-        
-        self.darkpaths = savepaths
+            pickle.dump(savepaths, pkl)
 
+        self.darkpaths = savepaths
 
     # TRIPOL specific
     def make_flat(self, savedir=None,
@@ -531,7 +529,6 @@ class Preprocessor():
 
         self.flatpaths = savepaths
 
-
     def do_preproc(self, savedir=None, delimiter='_', dtype='float32',
                    exposure_key="EXPTIME",
                    bias_grouped_by=["FILTER"],
@@ -558,7 +555,7 @@ class Preprocessor():
         savedir = Path(savedir)
         mkdir(savedir)
 
-        savepaths=[]
+        savepaths = []
         for fpath in self.objpaths:
             savepath = savedir / fpath.name
             savepaths.append(savepath)
@@ -592,7 +589,7 @@ class Preprocessor():
                                mbiaspath=biaspath,
                                mdarkpath=darkpath,
                                mflatpath=flatpath,
-                               do_crrej=do_crrej, 
+                               do_crrej=do_crrej,
                                verbose_bdf=verbose_bdf,
                                verbose_crrej=verbose_crrej)
 
