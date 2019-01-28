@@ -1,4 +1,7 @@
 # TRIPOLpy
+
+Developed by Yoonsoo P. Bach
+
 This is a small package developed purely for TRIPOL installed at Seoul National University (SNU) since 2017. The TRIPOL is provided by the courtesy of prof. Shuji Sato (Nagoya Univ), and installed by the following people:
 
 | Name              | Affiliation              | Position in 2018        |
@@ -431,6 +434,8 @@ Please open an issue [here](https://github.com/ysBach/TRIPOLpy/issues)!
 
 
 ## Acknowledgement
+
+Yoonsoo P. Bach was supported by the Seoul National University Research Grant in 2018 ($10/month).
 
 **Prof. Myungshin Im** at SNU has financially supported TRIPOL project.
 
