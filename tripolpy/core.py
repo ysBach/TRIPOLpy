@@ -51,7 +51,7 @@ RDNOISE_E = dict(g=dict(default=0,
                  i=dict(default=0,
                         Jun2018=18.7))
 
-LACOSMIC = dict(sigclip=4.5, sigfrac=0.3, objlim=5.0, # gain=1.0, readnoise=6.5,
+LACOSMIC = dict(sigclip=4.5, sigfrac=0.3, objlim=5.0,  # gain=1.0, readnoise=6.5,
                 satlevel=np.inf, pssl=0.0, niter=4, sepmed=False,
                 cleantype='medmask', fsmode='median', psfmodel='gauss',
                 psffwhm=2.5, psfsize=7, psfk=None, psfbeta=4.765)
@@ -63,6 +63,7 @@ KEYMAP = {"EXPTIME": 'EXPOS', "GAIN": 'EGAIN', "OBJECT": 'OBJECT',
 USEFUL_KEYS = ["EXPTIME", "FILTER", "DATE-OBS", "RET-ANG1", "CCD_TEMP",
                "CCD_COOL", "OBJECT", "EPOCH", "RA", "DEC", "ALT", "AZ",
                "AIRMASS"]
+
 
 def reset_dir(topdir):
     topdir = Path(topdir)
@@ -78,7 +79,7 @@ def reset_dir(topdir):
 
     for path in dirsatraw:
         if ((path.is_dir()) and (path.name != "archive")
-            and (path.name != "useless") and not (path.name.startswith("."))):
+           and (path.name != "useless") and not (path.name.startswith("."))):
             shutil.rmtree(path)
         else:
             fpaths = path.glob("*")
@@ -162,7 +163,6 @@ def cards_gain_rdnoise(filter_str):
                 + f"{RDNOISE_E[filter_str]} e."))]
 
     return cs
-
 
 
 def fits_newpath(fpath, rename_by, mkdir_by=None, header=None, delimiter='_',

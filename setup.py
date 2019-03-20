@@ -23,7 +23,7 @@ setup(
     license="MIT",
     keywords="",
     url="https://github.com/ysBach/TRIPOLpy",
-    classifiers = classifiers,
+    classifiers=classifiers,
     packages=find_packages(),
     python_requires='>=3.6',
     install_requires=install_requires )
