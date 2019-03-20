@@ -21,7 +21,7 @@ This package is developed using Python 3.6, not IRAF, julia, or IDL, since it (i
 * OS independent (~~IRAF~~)
 * Version controllable via simple platform (~~IRAF, IDL~~)
 * Has long term plans to be managed by professionals (~~IRAF, Python 2~~)
-* Will be used in future astronomy projects (~~IDL, Python 2~~)
+* Will be used in future astronomy projects (~~IDL?, IRAF, Python 2~~)
 * Has strong user-friendly astronomy-related package support (~~julia, low-level languages~~)
 
 The only remaining language is Python 3. We selected Python 3.6 since it will be the only language supported by astropy 4.0 LTS (see [astropy APE 10](https://github.com/astropy/astropy-APEs/blob/master/APE10.rst)).
