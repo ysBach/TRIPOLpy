@@ -14,15 +14,15 @@ This is a small package developed purely for TRIPOL installed at Seoul National 
 | Sunho Jin         | SNU                      | MS student              |
 | Yoonsoo P. Bach   | SNU                      | PhD student             |
 
-This package is developed using Python 3.6 since it (is)
+This package is developed using Python 3.6, not IRAF, julia, or IDL, since it (is)
 
-* Free (Python 2/3, IRAF)
-* Stable (Python 2/3, IRAF, IDL)
-* OS independent (Python 2/3, julia, IDL)
-* Version controllable via simple platform (julia, Python 2/3 via git + conda)
-* Has long term plans to be managed by professionals (Python 3, julia, IDL)
-* Will be used in future astronomy projects (Python 3, julia, C++)
-* Has strong user-friendly astronomy-related package support (~~low-level languages~~)
+* Free (~~IDL~~)
+* Stable at the time of the initial development (~~julia~~)
+* OS independent (~~IRAF~~)
+* Version controllable via simple platform (~~IRAF, IDL~~)
+* Has long term plans to be managed by professionals (~~IRAF, Python 2~~)
+* Will be used in future astronomy projects (~~IDL, Python 2~~)
+* Has strong user-friendly astronomy-related package support (~~julia, low-level languages~~)
 
 The only remaining language is Python 3. We selected Python 3.6 since it will be the only language supported by astropy 4.0 LTS (see [astropy APE 10](https://github.com/astropy/astropy-APEs/blob/master/APE10.rst)).
 
@@ -33,10 +33,10 @@ The only remaining language is Python 3. We selected Python 3.6 since it will be
 We tested TRIPOLpy under the following conditions:
 
 * **Python 3.6 +**
-* scipy 1.0.0
-* numpy 1.14.2
-* astropy 3.0.1
-* ccdproc 1.3
+* scipy 1.0.0 +
+* numpy 1.14.2 +
+* astropy 3.0.1 +
+* ccdproc 1.3 +
 
 Code validity tested on Windows 10 and Ubuntu 16.04.
 
@@ -421,7 +421,7 @@ The headers are also updated:
 
 ### SDSS Prime Standard Stars
 
-The SDSS u'g'r'i'z' standard stars can be found at [here](http://www-star.fnal.gov/ugriz/tab08.dat) or my personal [Google Docs](https://drive.google.com/open?id=1flvTCjORDbEi368Ls7wliJRp3EeEjtOyK5bEfu-IQw8).
+The SDSS u'g'r'i'z' standard stars can be found at [here](http://www-star.fnal.gov/ugriz/tab08.dat).
 
 For all the information for the standard stars (SDSS u'g'r'i'z'), see [here](http://www-star.fnal.gov/).
 
@@ -435,7 +435,7 @@ Please open an issue [here](https://github.com/ysBach/TRIPOLpy/issues)!
 
 ## Acknowledgement
 
-Yoonsoo P. Bach was supported by the Seoul National University Research Grant in 2018 ($10/month).
+This work was supported by the Seoul National University Research Grant in 2018. Yoonsoo P. Bach developed this package from this support ($10/month).
 
 **Prof. Myungshin Im** at SNU has financially supported TRIPOL project.
 
