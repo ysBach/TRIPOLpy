@@ -5,8 +5,8 @@ TRIPOL related package
 from setuptools import setup, find_packages
 
 setup_requires=[]
-install_requires = ['numpy',
-                    'scipy',
+install_requires = ['numpy>=1.1',
+                    'scipy>=0.17',
                     'astropy >= 2.0',
                     'ccdproc >= 1.3']
 
@@ -16,7 +16,7 @@ classifiers = ["Intended Audience :: Science/Research",
 
 setup(
     name="tripolpy",
-    version="0.1.2",
+    version="0.1.3",
     author="Yoonsoo P. Bach",
     author_email="dbstn95@gmail.com",
     description="Data reduction package for TRIPOL at SNU",

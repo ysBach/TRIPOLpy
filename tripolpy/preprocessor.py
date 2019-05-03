@@ -1,13 +1,16 @@
 import warnings
 from pathlib import Path
-from itertools import product
 from astropy.io import fits
 from astropy.io.fits import Card
-from astropy import table
 from astropy.table import Table
 from astropy.nddata import CCDData
 import pickle
-from .core import *
+from .core import (USEFUL_KEYS, MEDCOMB_KEYS, KEYMAP,
+                   mkdir, imgpath, fitsrenamer,
+                   cards_gain_rdnoise,
+                   airmass_hdr, cards_airmass,
+                   combine_ccd, bdf_process,
+                   make_summary)
 
 __all__ = ["Preprocessor"]
 
@@ -313,12 +316,12 @@ class Preprocessor():
             savepath = imgpath(["bias"] + group_by_vals,
                                delimiter=delimiter,
                                directory=savedir)
-            mbias = combine_ccd(group["file"],
-                                output=savepath,
-                                dtype=dtype,
-                                **comb_kwargs,
-                                type_key=hdr_keys,
-                                type_val=hdr_vals)
+            _ = combine_ccd(group["file"],
+                            output=savepath,
+                            dtype=dtype,
+                            **comb_kwargs,
+                            type_key=hdr_keys,
+                            type_val=hdr_vals)
             savepaths[tuple(group_by_vals)] = savepath
 
         # Save list of file paths for future use.
@@ -414,7 +417,7 @@ class Preprocessor():
         # Do dark combine:
         for group in grouped.groups:
             group_by_vals = list(group[group_by][0].as_void())
-            exptime_dark = float(group[exposure_key][0])
+            # exptime_dark = float(group[exposure_key][0])
             darkpath = imgpath(["dark"] + group_by_vals,
                                delimiter=delimiter,
                                directory=savedir)
@@ -422,8 +425,8 @@ class Preprocessor():
             mdark = combine_ccd(group["file"],
                                 dtype=dtype,
                                 **comb_kwargs,
-                                type_key=hdr_keys+group_by,
-                                type_val=hdr_vals+group_by_vals)
+                                type_key=hdr_keys + group_by,
+                                type_val=hdr_vals + group_by_vals)
 
             if bias_sub:
                 bias_vals = tuple(group[bias_grouped_by][0].as_void())
@@ -495,15 +498,15 @@ class Preprocessor():
         # Do flat combine:
         for group in grouped.groups:
             group_by_vals = list(group[group_by][0].as_void())
-            exptime_dark = float(group[exposure_key][0])
+            # exptime_dark = float(group[exposure_key][0])
             flatpath = imgpath(["flat"] + group_by_vals,
                                delimiter=delimiter,
                                directory=savedir)
             mflat = combine_ccd(group["file"],
                                 dtype=dtype,
                                 **comb_kwargs,
-                                type_key=hdr_keys+group_by,
-                                type_val=hdr_vals+group_by_vals)
+                                type_key=hdr_keys + group_by,
+                                type_val=hdr_vals + group_by_vals)
             if bias_sub:
                 bias_vals = tuple(group[bias_grouped_by][0].as_void())
                 biaspath = self.biaspaths[bias_vals]
@@ -583,15 +586,15 @@ class Preprocessor():
                 warnings.warn(f"Flat with {flat_vals} not available.")
 
             objccd = CCDData.read(fpath)
-            proc = bdf_process(objccd,
-                               output=savepath,
-                               unit=None,
-                               mbiaspath=biaspath,
-                               mdarkpath=darkpath,
-                               mflatpath=flatpath,
-                               do_crrej=do_crrej,
-                               verbose_bdf=verbose_bdf,
-                               verbose_crrej=verbose_crrej)
+            _ = bdf_process(objccd,
+                            output=savepath,
+                            unit=None,
+                            mbiaspath=biaspath,
+                            mdarkpath=darkpath,
+                            mflatpath=flatpath,
+                            do_crrej=do_crrej,
+                            verbose_bdf=verbose_bdf,
+                            verbose_crrej=verbose_crrej)
 
         self.reducedpaths = savepaths
 
