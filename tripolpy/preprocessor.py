@@ -32,6 +32,7 @@ class Preprocessor():
         self.topdir = topdir  # e.g., Path('180412')
         self.rawdir = rawdir  # e.g., Path('180412', 'rawdata')
         self.rawpaths = list(Path(rawdir).glob('*.fits'))
+        self.rawpaths.sort()
         self.summary_keywords = summary_keywords
         self.newpaths = None
         self.summary = None
@@ -117,16 +118,18 @@ class Preprocessor():
             supported to move the files. You may delete files manually if
             needed.
         '''
-        def _guess_hwpangle(hdr):
+        def _guess_hwpangle(hdr, fpath):
             try:
                 hwpangle = float(hdr[KEYMAP["OBJECT"]].split('_')[-1])
                 if hwpangle > 180:
                     hwpangle = hwpangle / 10
             except ValueError:
-                hwpangle = 0
+                hwpangle = input(
+                    f"{fpath.name}: HWP angle not found. Enter it (0, 22.5, 45, 67.5): ")
 
             return float(hwpangle)
 
+        _valid_hwpangs = [0, 0.0, 22.5, 45, 45.0, 67.5]
         newpaths = []
         objpaths = []
         uselessdir = self.rawdir / "useless"
@@ -184,12 +187,6 @@ class Preprocessor():
             if "BUNIT" not in hdr:
                 cards.append(Card("BUNIT", "ADU", "Pixel value unit"))
 
-            # Add polarimetry-key (RET-ANG1) if there is none:
-            if "RET-ANG1" not in hdr:
-                hwpangle = _guess_hwpangle(hdr)
-                cards.append(Card("RET-ANG1", hwpangle,
-                                  "The half-wave plate angle."))
-
             # Calculate airmass by looking at the first 4 chars of OBJECT
             if obj[:4].lower() not in ['bias', 'dark', 'test']:
                 # FYI: flat MAY require airmass just for check (twilight/night)
@@ -222,6 +219,19 @@ class Preprocessor():
 
                 if obj[:4].lower() != "flat":
                     is_object = True
+
+            # Add polarimetry-key (RET-ANG1) if there is none:
+            if "RET-ANG1" not in hdr:
+                hwpangle = _guess_hwpangle(hdr, fpath)
+                cards.append(Card("RET-ANG1", float(hwpangle),
+                                  "The half-wave plate angle."))
+
+            elif is_object and ((isinstance(hdr["RET-ANG1"], str))
+                                or (hdr["RET-ANG1"] not in _valid_hwpangs)):
+                hwpangle_orig = hdr["RET-ANG1"]
+                hwpangle = input(
+                    f"{fpath.name}: HWP angle is now {hwpangle_orig}. Enter correct value (0, 22.5, 45, 67.5): ")
+                hdr["RET-ANG1"] = float(hwpangle)
 
             add_hdr = fits.Header(cards)
 
@@ -571,19 +581,19 @@ class Preprocessor():
                 biaspath = self.biaspaths[bias_vals]
             except (KeyError, TypeError):
                 biaspath = None
-                warnings.warn(f"Bias with {bias_vals} not available.")
+                warnings.warn(f"Bias not available for", bias_vals)
 
             try:
                 darkpath = self.darkpaths[dark_vals]
             except (KeyError, TypeError):
                 darkpath = None
-                warnings.warn(f"Dark with {dark_vals} not available.")
+                warnings.warn(f"Dark not available for", dark_vals)
 
             try:
                 flatpath = self.flatpaths[flat_vals]
             except (KeyError, TypeError):
                 flatpath = None
-                warnings.warn(f"Flat with {flat_vals} not available.")
+                warnings.warn(f"Flat not available for", flat_vals)
 
             objccd = CCDData.read(fpath)
             _ = bdf_process(objccd,
