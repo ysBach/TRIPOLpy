@@ -1,9 +1,11 @@
-import warnings
+# import warnings
+from warnings import warn
 from pathlib import Path
 import shutil
 import os
 
 import numpy as np
+import pandas as pd
 from scipy.stats import itemfreq
 
 from astropy.io import fits
@@ -12,6 +14,7 @@ from astropy import units as u
 from astropy.coordinates import EarthLocation, AltAz, SkyCoord
 from astropy.time import Time
 from astropy.table import Table, Column
+from astropy.wcs import WCS
 from astropy.nddata import CCDData, StdDevUncertainty
 from astropy.modeling.functional_models import Gaussian1D
 from astropy.modeling.fitting import LevMarLSQFitter
@@ -30,7 +33,7 @@ __all__ = ["KEYMAP", "GAIN_EPADU", "RDNOISE_E", "USEFUL_KEYS", "MEDCOMB_KEYS",
            "make_summary", "Gfit2hist", "bias2rdnoise"]
 
 MEDCOMB_KEYS = dict(overwrite=True,
-                    unit=None,
+                    unit='adu',
                     combine_method="median",
                     reject_method=None,
                     combine_uncertainty_function=None)
@@ -79,7 +82,7 @@ def reset_dir(topdir):
 
     for path in dirsatraw:
         if ((path.is_dir()) and (path.name != "archive")
-           and (path.name != "useless") and not (path.name.startswith("."))):
+                and (path.name != "useless") and not (path.name.startswith("."))):
             shutil.rmtree(path)
         else:
             fpaths = path.glob("*")
@@ -143,7 +146,7 @@ def cards_airmass(am, full):
                "Azimuth (end of the exposure)"),
           Card("COMMENT", amstr),
           Card("HISTORY", "ALT-AZ calculated from TRIPOLpy."),
-          Card("HISTORY", "AIRMASS calculated from TRIPOLpy.") ]
+          Card("HISTORY", "AIRMASS calculated from TRIPOLpy.")]
 
     return cs
 
@@ -390,12 +393,12 @@ def airmass_obs(targetcoord, obscoord, ut, exptime, scale=750., full=False):
 
     '''
     if not isinstance(ut, Time):
-        warnings.warn("ut is not Time object. "
-                      + "Assume format='isot', scale='utc'.")
+        warn("ut is not Time object. "
+             + "Assume format='isot', scale='utc'.")
         ut = Time(ut, format='isot', scale='utc')
     if not isinstance(exptime, u.Quantity):
-        warnings.warn("exptime is not astropy Quantity. "
-                      + "Assume it is in seconds.")
+        warn("exptime is not astropy Quantity. "
+             + "Assume it is in seconds.")
         exptime = exptime * u.s
 
     t_start = ut
@@ -524,90 +527,217 @@ def airmass_hdr(header=None, ra=None, dec=None, ut=None, exptime=None,
     return result
 
 
-def stack_FITS(filelist, extension, unit='adu', trim_fits_section=None,
-               type_key=None, type_val=None):
-    ''' Stacks the FITS files specified in filelist
+def load_ccd(path, extension=0, usewcs=True, uncertainty_ext="UNCERT",
+             unit='adu'):
+    '''remove it when astropy updated:
+    Note
+    ----
+    CCDData.read cannot read TPV WCS:
+    https://github.com/astropy/astropy/issues/7650
+    '''
+    hdul = fits.open(path)
+    hdu = hdul[extension]
+    try:
+        unc = StdDevUncertainty(hdul[uncertainty_ext].data)
+    except KeyError:
+        unc = None
+
+    w = None
+    if usewcs:
+        w = WCS(hdu.header)
+
+    ccd = CCDData(data=hdu.data, header=hdu.header, wcs=w,
+                  uncertainty=unc, unit=unit)
+    return ccd
+
+
+def stack_FITS(fitslist=None, summary_table=None, extension=0,
+               unit='adu', table_filecol="file", trim_fits_section=None,
+               loadccd=True, type_key=None, type_val=None):
+    ''' Stacks the FITS files specified in fitslist
     Parameters
     ----------
-    filelist: str, path-like, or list of such
-        The list of FITS files to be stacked
+    fitslist: path-like, list of path-like, or list of CCDData, optional.
+        The list of path to FITS files or the list of CCDData to be stacked.
+        It is useful to give list of CCDData if you have already stacked/loaded
+        FITS file into a list by your own criteria. If ``None`` (default),
+        you must give ``fitslist`` or ``summary_table``. If it is not ``None``,
+        this function will do very similar job to that of ``ccdproc.combine``.
+        Although it is not a good idea, a mixed list of CCDData and paths to
+        the files is also acceptable.
 
-    extension: int or str
+    summary_table: pandas.DataFrame or astropy.table.Table, optional.
+        The table which contains the metadata of files. If there are many
+        FITS files and you want to use stacking many times, it is better to
+        make a summary table by ``filemgmt.make_summary`` and use that instead
+        of opening FITS files' headers every time you call this function. If
+        you want to use ``summary_table`` instead of ``fitslist`` and have set
+        ``loadccd=True``, you must not have ``None`` or ``NaN`` value in the
+        ``summary_table[table_filecol]``.
+
+    extension : int or str, optional.
         The extension of FITS to be stacked. For single extension, set it as 0.
 
-    unit: Unit or str, optional
+    unit : `~astropy.units.Unit` or str, optional.
+        The units of the data.
+        Default is ``'adu'``.
+
+    table_filecol:  str, optional.
+        The column name of the ``summary_table`` which contains the path to
+        the FITS files.
 
     trim_fits_section: str, optional
         Region of ``ccd`` to be trimmed; see ``ccdproc.subtract_overscan`` for
-        details. Default is None.
+        details.
+        Default is ``None``.
+
+    loadccd: bool, optional
+        Whether to return file paths or loaded CCDData. If ``False``, it is
+        a function to select FITS files using ``type_key`` and ``type_val``
+        without using much memory.
 
     Return
     ------
-    all_ccd: list
-        list of ``CCDData``
+    matched: list of Path or list of CCDData
+        list containing Path to files if ``loadccd`` is ``False``. Otherwise
+        it is a list containing loaded CCDData after loading the files. If
+        ``ccdlist`` is given a priori, list of CCDData will be returned
+        regardless of ``loadccd``.
     '''
+    def _parse_val(value):
+        val = str(value)
+        if val.lstrip('+-').isdigit():  # if int
+            result = int(val)
+        else:
+            try:
+                result = float(val)
+            except ValueError:
+                result = str(val)
+        return result
 
-    iskey = False
-    filelist = list(filelist)
+    def _check_mismatch(row):
+        mismatch = False
+        for k, v in zip(type_key, type_val):
+            hdr_val = _parse_val(row[k])
+            parse_v = _parse_val(v)
+            if (hdr_val != parse_v):
+                mismatch = True
+                break
+        return mismatch
 
+    if ((fitslist is not None) + (summary_table is not None) != 1):
+        raise ValueError(
+            "One and only one of fitslist or summary_table must be not None.")
+
+    # If fitslist
+    if (fitslist is not None) and (not isinstance(fitslist, list)):
+        fitslist = [fitslist]
+        # raise TypeError(
+        #     f"fitslist must be a list. It's now {type(fitslist)}.")
+
+    # If summary_table
+    if summary_table is not None:
+        if ((not isinstance(summary_table, Table))
+                and (not isinstance(summary_table, pd.DataFrame))):
+            raise TypeError(
+                f"summary_table must be an astropy Table or Pandas DataFrame. It's now {type(summary_table)}.")
+
+    # Check for type_key and type_val
     if ((type_key is None) ^ (type_val is None)):
-        raise KeyError(
+        raise ValueError(
             "type_key and type_val must be both specified or both None.")
 
+    # Setting whether to group
+    grouping = False
     if type_key is not None:
-        iskey = True
+        if len(type_key) != len(type_val):
+            raise ValueError(
+                "type_key and type_val must be of the same length.")
+        grouping = True
+        # If str, change to list:
         if isinstance(type_key, str):
             type_key = [type_key]
         if isinstance(type_val, str):
             type_val = [type_val]
 
-        if len(type_key) != len(type_val):
-            raise ValueError(
-                "type_key and type_val must be of the same length.")
+    matched = []
 
-    all_ccd = []
+    print("Analyzing FITS... ", end='')
+    # Set fitslist and summary_table based on the given input and grouping.
+    if fitslist is not None:
+        if grouping:
+            summary_table = make_summary(fitslist, extension=extension,
+                                         verbose=True, fname_option='relative',
+                                         keywords=type_key, sort_by=None)
+            summary_table = summary_table.to_pandas()
+    elif summary_table is not None:
+        fitslist = summary_table[table_filecol].tolist()
+        if isinstance(summary_table, Table):
+            summary_table = summary_table.to_pandas()
 
-    for i, fname in enumerate(filelist):
-        if unit is not None:
-            ccd_i = CCDData.read(fname, hdu=extension, unit=unit)
-        else:
-            ccd_i = CCDData.read(fname, hdu=extension)
+    print("Done", end='')
+    if load_ccd:
+        print(" and loading FITS... ")
+    else:
+        print(".")
 
-        if iskey:
-            mismatch = False
-            for k, v in zip(type_key, type_val):
-                if (str(ccd_i.header[k]) != str(v)):
-                    mismatch = True
-                    break
-            if mismatch:
+    # Append appropriate CCDs or filepaths to matched
+    if grouping:
+        for i, row in summary_table.iterrows():
+            mismatch = _check_mismatch(row)
+            if mismatch:  # skip this row (file)
                 continue
 
-        if trim_fits_section is not None:
-            ccd_i = trim_image(ccd_i, fits_section=trim_fits_section)
-
-        all_ccd.append(ccd_i)
-#        im_i = hdu_i[extension].data
-#        if (i == 0):
-#            all_data = im_i
-#        elif (i > 0):
-#            all_data = np.dstack( (all_data, im_i) )
-
-    if len(all_ccd) == 0:
-        if iskey:
-            warnings.warn('No FITS file had "{:s} = {:s}"'.format(str(type_key),
-                                                                  str(type_val)))
-        else:
-            warnings.warn('No FITS file found')
+            # if not skipped:
+            # TODO: Is is better to remove Path here?
+            if isinstance(fitslist[i], CCDData):
+                matched.append(fitslist[i])
+            else:  # it must be a path to the file
+                fpath = Path(fitslist[i])
+                if loadccd:
+                    ccd_i = load_ccd(fpath, extension=extension, unit=unit)
+                    if trim_fits_section is not None:
+                        ccd_i = trim_image(
+                            ccd_i, fits_section=trim_fits_section)
+                    matched.append(ccd_i)
+                else:
+                    matched.append(fpath)
     else:
-        if iskey:
-            print('{:d} FITS files with "{:s} = {:s}"'
-                  ' are loaded.'.format(len(all_ccd),
-                                        str(type_key),
-                                        str(type_val)))
-        else:
-            print('{:d} FITS files are loaded.'.format(len(all_ccd)))
+        for item in fitslist:
+            if isinstance(item, CCDData):
+                matched.append(item)
+            else:
+                if loadccd:
+                    ccd_i = load_ccd(fpath, extension=extension, unit=unit)
+                    if trim_fits_section is not None:
+                        ccd_i = trim_image(
+                            ccd_i, fits_section=trim_fits_section)
+                    matched.append(ccd_i)
+                else:  # TODO: Is is better to remove Path here?
+                    matched.append(Path(fpath))
 
-    return all_ccd
+    # Generate warning OR information messages
+    if len(matched) == 0:
+        if grouping:
+            warn('No FITS file had "{:s} = {:s}"'.format(str(type_key),
+                                                         str(type_val))
+                 + "Maybe int/float/str confusing?")
+        else:
+            warn('No FITS file found')
+    else:
+        if grouping:
+            N = len(matched)
+            ks = str(type_key)
+            vs = str(type_val)
+            if load_ccd:
+                print(f'{N} FITS files with "{ks} = {vs}" are loaded.')
+            else:
+                print(f'{N} FITS files with "{ks} = {vs}" are selected.')
+        else:
+            if load_ccd:
+                print('{:d} FITS files are loaded.'.format(len(matched)))
+
+    return matched
 
 
 def CCDData_astype(ccd, dtype='float32'):
@@ -621,15 +751,13 @@ def CCDData_astype(ccd, dtype='float32'):
 
 def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
                 subtract_frame=None, combine_method='median', reject_method=None,
-                normalize=False, exposure_key='EXPTIME',
+                normalize_exposure=False, exposure_key='EXPTIME',
                 combine_uncertainty_function=ccdproc_mad2sigma_func,
-                extension=0, type_key=None, type_val=None,
-                dtype=np.float32, output_verify='fix', overwrite=False,
+                extension=0, dtype=np.float32, type_key=None, type_val=None,
+                output_verify='fix', overwrite=False,
                 **kwargs):
     ''' Combining images
     Slight variant from ccdproc.
-    # TODO: For TRIPOL, add HISTORY or COMMENT which includes the list of
-    #   all the fits files name or just simply the COUNTER.
     # TODO: accept the input like ``sigma_clip_func='median'``, etc.
     # TODO: normalize maybe useless..
     Parameters
@@ -637,20 +765,75 @@ def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
     fitslist: list of str, path-like
         list of FITS files.
 
-    combine: str
-        The ``method`` for ``ccdproc.combine``, i.e., {'average', 'median', 'sum'}
+    trim_fits_section : str or None, optional
+        The ``fits_section`` of ``ccdproc.trim_image``.
+        Region of ``ccd`` from which the overscan is extracted; see
+        `~ccdproc.subtract_overscan` for details.
+        Default is ``None``.
 
-    reject: str
+    output : path-like or None, optional.
+        The path if you want to save the resulting ``ccd`` object.
+        Default is ``None``.
+
+    unit : `~astropy.units.Unit` or str, optional.
+        The units of the data.
+        Default is ``'adu'``.
+
+    subtract_frame : array-like, optional.
+        The frame you want to subtract from the image after the combination.
+        It can be, e.g., dark frame, because it is easier to calculate Poisson
+        error before the dark subtraction and subtract the dark later.
+        TODO: This maybe unnecessary.
+        Default is ``None``.
+
+    combine_method : str or None, optinal.
+        The ``method`` for ``ccdproc.combine``, i.e., {'average', 'median', 'sum'}
+        Default is ``None``.
+
+    reject_method : str
         Made for simple use of ``ccdproc.combine``,
-        {None, 'minmax', 'sigclip' == 'sigma_clip', 'extrema'}. Automatically turns
-        on the option, e.g., ``clip_extrema = True`` or ``sigma_clip = True``.
+        {None, 'minmax', 'sigclip' == 'sigma_clip', 'extrema'}. Automatically
+        turns on the option, e.g., ``clip_extrema = True`` or
+        ``sigma_clip = True``.
         Leave it blank for no rejection.
+        Default is ``None``.
+
+    normalize_exposure : bool, optional.
+        Whether to normalize the values by the exposure time before combining.
+        Default is ``False``.
+
+    exposure_key : str, optional
+        The header keyword for the exposure time.
+        Default is ``"EXPTIME"``.
+
+    combine_uncertainty_function : callable, None, optional
+        The uncertainty calculation function of ``ccdproc.combine``.
+        If ``None`` use the default uncertainty func when using average,
+        median or sum combine, otherwise use the function provided.
+        Default is ``None``.
+
+    extension: int or str, optional
+        The extension to be used.
+        Default is ``0``.
+
+    dtype : str or `numpy.dtype` or None, optional
+        Allows user to set dtype. See `numpy.array` ``dtype`` parameter
+        description. If ``None`` it uses ``np.float64``.
+        Default is ``None``.
 
     type_key, type_val: str, list of str
         The header keyword for the ccd type, and the value you want to match.
         For an open HDU named ``hdu``, e.g., only the files which satisfies
         ``hdu[extension].header[type_key] == type_val`` among all the ``fitslist``
         will be used.
+
+    output_verify : str
+        Output verification option.  Must be one of ``"fix"``, ``"silentfix"``,
+        ``"ignore"``, ``"warn"``, or ``"exception"``.  May also be any
+        combination of ``"fix"`` or ``"silentfix"`` with ``"+ignore"``,
+        ``+warn``, or ``+exception" (e.g. ``"fix+warn"``).  See the astropy
+        documentation below:
+        http://docs.astropy.org/en/stable/io/fits/api/verification.html#verify
 
     **kwarg:
         kwargs for the ``ccdproc.combine``. See its documentation.
@@ -738,7 +921,7 @@ def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
             print(f"{output} already exists:\n\t", end='')
             return load_if_exists(output, loader=CCDData.read, if_not=None)
 
-    ccdlist = stack_FITS(filelist=fitslist,
+    ccdlist = stack_FITS(fitslist=fitslist,
                          extension=extension,
                          unit=unit,
                          trim_fits_section=trim_fits_section,
@@ -753,7 +936,7 @@ def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
                 **kwargs)
 
     # Normalize by exposure: useful if flat images have different exptimes.
-    if normalize:
+    if normalize_exposure:
         ccdlist = _normalize_exptime(ccdlist, exposure_key)
 
     # Set rejection switches
@@ -844,7 +1027,7 @@ def get_from_header(header, key, unit=None, verbose=True,
     except KeyError:
         if default is not None:
             value = _change_to_quantity(default, desired=unit)
-            warnings.warn(f"{key} not found in header: setting to {default}.")
+            warn(f"{key} not found in header: setting to {default}.")
 
     if unit is not None:
         value = value * unit
@@ -852,14 +1035,15 @@ def get_from_header(header, key, unit=None, verbose=True,
     return value
 
 
-# TODO: put an option such that the crrej can be done either before/after the preprocessing..?
+# NOTE: crrej should be done AFTER bias/dark and flat correction:
+# http://www.astro.yale.edu/dokkum/lacosmic/notes.html
 def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None,
                 fits_section=None, calc_err=False, unit='adu', gain=None,
                 rdnoise=None, gain_key="GAIN", rdnoise_key="RDNOISE",
                 gain_unit=u.electron / u.adu, rdnoise_unit=u.electron,
                 dark_exposure=None, data_exposure=None, exposure_key="EXPTIME",
                 exposure_unit=u.s, dark_scale=False,
-                min_value=None, norm_value=None,
+                flat_min_value=None, flat_norm_value=None,
                 do_crrej=False, verbose_crrej=False,
                 verbose_bdf=True, output_verify='fix', overwrite=True,
                 dtype="float32"):
@@ -868,8 +1052,90 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
     ----------
     ccd: array-like
         The ccd to be processed.
-    output: str or path-like
-        Saving path
+
+    output : path-like or None, optional.
+        The path if you want to save the resulting ``ccd`` object.
+        Default is ``None``.
+
+    mbiaspath, mdarkpath, mflatpath : path-like, optional.
+        The path to master bias, dark, flat FITS files. If ``None``, the
+        corresponding process is not done.
+
+    fits_section: str, optional
+        Region of ``ccd`` to be trimmed; see ``ccdproc.subtract_overscan`` for
+        details. Default is ``None``.
+
+    calc_err : bool, optional.
+        Whether to calculate the error map based on Poisson and readnoise
+        error propagation.
+
+    unit : `~astropy.units.Unit` or str, optional.
+        The units of the data.
+        Default is ``'adu'``.
+
+    gain, rdnoise : None, float, optional
+        The gain and readnoise value. These are all ignored if ``calc_err=False``.
+        If ``calc_err=True``, it automatically seeks for suitable gain and
+        readnoise value. If ``gain`` or ``readnoise`` is specified, they are
+        interpreted with ``gain_unit`` and ``rdnoise_unit``, respectively.
+        If they are not specified, this function will seek for the header
+        with keywords of ``gain_key`` and ``rdnoise_key``, and interprete the
+        header value in the unit of ``gain_unit`` and ``rdnoise_unit``,
+        respectively.
+
+    gain_key, rdnoise_key : str, optional
+        See ``gain``, ``rdnoise`` explanation above.
+        These are all ignored if ``calc_err=False``.
+
+    gain_unit, rdnoise_unit : astropy Unit, optional
+        See ``gain``, ``rdnoise`` explanation above.
+        These are all ignored if ``calc_err=False``.
+
+    dark_exposure, data_exposure : None, float, astropy Quantity, optional
+        The exposure times of dark and data frame, respectively. They should
+        both be specified or both ``None``.
+        These are all ignored if ``mdarkpath=None``.
+        If both are not specified while ``mdarkpath`` is given, then the code
+        automatically seeks for header's ``exposure_key``. Then interprete the
+        value as the quantity with unit ``exposure_unit``.
+
+        If ``mdkarpath`` is not ``None``, then these are passed to
+        ``ccdproc.subtract_dark``.
+
+    exposure_key : str, optional
+        The header keyword for exposure time.
+        Ignored if ``mdarkpath=None``.
+
+    exposure_unit : astropy Unit, optional.
+        The unit of the exposure time.
+        Ignored if ``mdarkpath=None``.
+
+    flat_min_value : float or None, optional
+        min_value of `ccdproc.flat_correct`.
+        Minimum value for flat field. The value can either be None and no
+        minimum value is applied to the flat or specified by a float which
+        will replace all values in the flat by the min_value.
+        Default is ``None``.
+
+    flat_norm_value : float or None, optional
+        norm_value of `ccdproc.flat_correct`.
+        If not ``None``, normalize flat field by this argument rather than the
+        mean of the image. This allows fixing several different flat fields to
+        have the same scale. If this value is negative or 0, a ``ValueError``
+        is raised. Default is ``None``.
+
+    output_verify : str
+        Output verification option.  Must be one of ``"fix"``, ``"silentfix"``,
+        ``"ignore"``, ``"warn"``, or ``"exception"``.  May also be any
+        combination of ``"fix"`` or ``"silentfix"`` with ``"+ignore"``,
+        ``+warn``, or ``+exception" (e.g. ``"fix+warn"``).  See the astropy
+        documentation below:
+        http://docs.astropy.org/en/stable/io/fits/api/verification.html#verify
+
+    dtype : str or `numpy.dtype` or None, optional
+        Allows user to set dtype. See `numpy.array` ``dtype`` parameter
+        description. If ``None`` it uses ``np.float64``.
+        Default is ``None``.
     '''
 
     proc = CCDData(ccd)
@@ -967,8 +1233,8 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
 
         proc = flat_correct(proc,
                             mflat,
-                            min_value=min_value,
-                            norm_value=norm_value)
+                            min_value=flat_min_value,
+                            norm_value=flat_norm_value)
 
     # Do very simple L.A. Cosmic default crrejection
     if do_crrej:
@@ -997,7 +1263,8 @@ def bdf_process(ccd, output=None, mbiaspath=None, mdarkpath=None, mflatpath=None
         else:
             proc.mask = proc.mask + crmask
         hdr_new["PROCESS"] += "C"
-        hdr_new.add_history(f"Cosmic-Ray rejected by astroscrappy, LACOSMIC default setting.")
+        hdr_new.add_history(
+            f"Cosmic-Ray rejected by astroscrappy, LACOSMIC default setting.")
 
     proc = CCDData_astype(proc, dtype=dtype)
     proc.header = hdr_new
@@ -1055,45 +1322,67 @@ def make_errmap(ccd, gain_epadu, rdnoise_electron=0,
     return errmap
 
 
-def make_summary(filelist, extension=0, fname_option='relative',
+def make_summary(fitslist, extension=0, fname_option='relative',
                  output=None, format='ascii.csv',
-                 keywords=[], dtypes=[],
+                 keywords=[],
                  example_header=None, sort_by='file', verbose=True):
     """ Extracts summary from the headers of FITS files.
     Parameters
     ----------
-    filelist: list of str (path-like)
-        The list of file paths relative to the current working directory.
+    fitslist: list of str (path-like) or list of CCDData, optional
+        The list of file paths relative to the current working directory, or
+        the list of ccds to be summarized. It can be useful to give a list of
+        CCDData if you have already stacked/loaded the CCDData into a list.
+        Although it is not a good idea, a mixed list of CCDData and paths to
+        the files is also acceptable.
 
-    extension: int or str
+    extension: int or str, optional
         The extension to be summarized.
 
-    fname_option: str {'absolute', 'relative', 'name'}
+    fname_option: str {'absolute', 'relative', 'name'}, optional
         Whether to save full absolute/relative path or only the filename.
 
-    output: str or path-like
+    output: str or path-like, optional
         The directory and file name of the output summary file.
 
-    format: str
+    format: str, optional
         The astropy.table.Table output format.
 
-    keywords: list
-        The list of the keywords to extract (keywords should be in ``str``).
+    keywords: list or str(``"*"``), optional
+        The list of the keywords to extract (keywords should be in str).
 
-    dtypes: list
-        The list of dtypes of keywords if you want to specify. If ``[]``,
-        ``['U80'] * len(keywords)`` will be used. Otherwise, it should have
-        the same length with ``keywords``.
-
-    example_header: str or path-like
+    example_header: str or path-like, optional
         The path including the filename of the output summary text file.
 
-    sort_by: str
+    sort_by: str, optional
         The column name to sort the results. It can be any element of
         ``keywords`` or ``'file'``, which sorts the table by the file name.
+
+    Return
+    ------
+    summarytab: astropy.Table
+
+    Example
+    -------
+    >>> from pathlib import Path
+    >>> import ysfitsutilpy as yfu
+    >>> keys = ["OBS-TIME", "FILTER", "OBJECT"]  # actually it is case-insensitive
+    >>> # The keywords you want to extract (from the headers of FITS files)
+    >>> TOPPATH = Path(".", "observation_2018-01-01")
+    >>> # The toppath
+    >>> savepath = TOPPATH / "summary_20180101.csv"
+    >>> # path to save summary csv file
+    >>> allfits = list((TOPPATH / "rawdata").glob("*.fits"))
+    >>> # list of all the fits files in Path object
+    >>> summary = yfu.make_summary(pathlist=allfits, keywords=keys,
+    >>>                            fname_option='name',
+    >>>                            sort_by="DATE-OBS", output=savepath)
+    >>> # The astropy.table.Table format.
+    >>> # If you want, you may change it to pandas:
+    >>> summary_pd = summary.to_pandas()`
     """
 
-    if len(filelist) == 0:
+    if len(fitslist) == 0:
         print("No FITS file found.")
         return
 
@@ -1105,6 +1394,17 @@ def make_summary(filelist, extension=0, fname_option='relative',
         else:
             return path.name
 
+    def _get_hdr(item, extension):
+        ''' Gets header from ``item``.
+        '''
+        if isinstance(item, CCDData):
+            hdr = item.header
+        else:
+            hdul = fits.open(item)
+            hdr = hdul[extension].header
+            hdul.close()
+        return hdr
+
     options = ['absolute', 'relative', 'name']
     if fname_option not in options:
         raise KeyError(f"fname_option must be one of {options}.")
@@ -1114,30 +1414,27 @@ def make_summary(filelist, extension=0, fname_option='relative',
     if verbose:
         if (keywords != []) and (keywords != '*'):
             print("Extracting keys: ", keywords)
-        str_example_hdr = "Extract example header from {:s}\n\tand save as {:s}"
+        str_example_hdr = "Extract example header from 0-th\n\tand save as {:s}"
         str_keywords = "All {:d} keywords will be loaded."
-        str_keyerror_fill = "Key {:s} not found for {:s}, filling with '--'."
-        str_valerror = "Please use 'U80' as the dtype for the key {:s}."
+        str_keyerror_fill = "Key {:s} not found for {:s}, filling with nan."
         str_filesave = 'Saving the summary file to "{:s}"'
 
     # Save example header
     if example_header is not None:
-        example_fits = filelist[0]
+        example_fits = fitslist[0]
         if verbose:
-            print(str_example_hdr.format(str(example_fits), example_header))
-        ex_hdu = fits.open(example_fits)
-        ex_hdr = ex_hdu[extension].header
+            print(str_example_hdr.format(example_header))
+        ex_hdr = _get_hdr(example_fits, extension=extension)
         ex_hdr.totextfile(example_header, overwrite=True)
 
     # load ALL keywords for special cases
     if (keywords == []) or (keywords == '*'):
-        example_fits = filelist[0]
-        ex_hdu = fits.open(example_fits)
-        ex_hdu.verify('fix')
-        ex_hdr = ex_hdu[extension].header
-        N_hdr = len(ex_hdr.cards)
+        example_fits = fitslist[0]
+        ex_hdr = _get_hdr(example_fits, extension=extension)
+        N_hkeys = len(ex_hdr.cards)
         keywords = []
-        for i in range(N_hdr):
+
+        for i in range(N_hkeys):
             key_i = ex_hdr.cards[i][0]
             if (key_i in skip_keys):
                 continue
@@ -1146,6 +1443,7 @@ def make_summary(filelist, extension=0, fname_option='relative',
                 print(str_duplicate.format(key_i))
                 continue
             keywords.append(key_i)
+
         if verbose:
             print(str_keywords.format(len(keywords)))
 #            except fits.VerifyError:
@@ -1154,50 +1452,37 @@ def make_summary(filelist, extension=0, fname_option='relative',
 #                continue
 
     # Initialize
-    if len(dtypes) == 0:
-        dtypes = ['U80'] * len(keywords)
-        # FITS header MUST be within 80 characters! (FITS standard)
-
-    summarytab = Table(names=keywords, dtype=dtypes)
-    fnames = []
+    summarytab = dict(file=[])
+    for k in keywords:
+        summarytab[k] = []
 
     # Run through all the fits files
-    for fitsfile in filelist:
-        fnames.append(_get_fname(fitsfile))
-        hdu = fits.open(fitsfile)
-        hdu.verify('fix')
-        hdr = hdu[extension].header
-        row = []
-        for key in keywords:
+    for i, item in enumerate(fitslist):
+        if isinstance(item, CCDData):
+            summarytab["file"].append(None)
+        else:
+            summarytab["file"].append(_get_fname(item))
+        hdr = _get_hdr(item, extension=extension)
+        for k in keywords:
             try:
-                row.append(hdr[key])
+                summarytab[k].append(hdr[k])
             except KeyError:
                 if verbose:
-                    print(str_keyerror_fill.format(key, str(fitsfile)))
-                try:
-                    row.append('--')
-                except ValueError:
-                    raise ValueError(str_valerror.format('U80'))
-        summarytab.add_row(row)
-        hdu.close()
+                    if isinstance(item, CCDData):
+                        print(str_keyerror_fill.format(k, f"fitslist[{i}]"))
+                    else:
+                        print(str_keyerror_fill.format(k, str(item)))
+                summarytab[k].append(None)
 
-    # Attache the file name, and then sort.
-    fnames = Column(data=fnames, name='file')
-    summarytab.add_column(fnames, index=0)
-    summarytab.sort(sort_by)
+    summarytab = Table(summarytab)
+    if sort_by is not None:
+        summarytab.sort(sort_by)
 
-    tmppath = Path('tmp.csv')
-    summarytab.write(tmppath, format=format)
-    summarytab = Table.read(tmppath, format=format)
-
-    if output is None or output == '':
-        tmppath.unlink()
-
-    else:
+    if output is not None:
         output = Path(output)
         if verbose:
             print(str_filesave.format(str(output)))
-        tmppath.rename(output)
+        summarytab.write(output, format=format)
 
     return summarytab
 

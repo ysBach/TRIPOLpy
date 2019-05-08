@@ -1,4 +1,4 @@
-import warnings
+from warnings import warn
 from pathlib import Path
 from astropy.io import fits
 from astropy.io.fits import Card
@@ -24,9 +24,12 @@ class Preprocessor():
             The top directory of which all the other paths will be represented
             relative to.
 
-        rawdir: path-like
+        rawdir : path-like
             The directory where all the FITS files are stored (without any
             subdirectory)
+
+        summary_keywords : list of str, optional
+            The keywords of the header to be used for the summary table.
         """
         topdir = Path(topdir)
         self.topdir = topdir  # e.g., Path('180412')
@@ -101,35 +104,47 @@ class Preprocessor():
         ''' Rename FITS files after updating theur headers.
         Parameters
         ----------
-        fpath: path-like
+        fpath : path-like
             The path to the target FITS file.
-        newtop: path-like
-            The top path for the new FITS file. If ``None``, the new path will
-            share the parent path with ``fpath``.
-        mkdir_by: list of str, optional
+
+        rename_by : list of str
+            The keywords in header to be used for the renaming of FITS files.
+            Each keyword values are connected by ``delimiter``.
+
+        mkdir_by : list of str, optional
             The keys which will be used to make subdirectories to classify
             files. If given, subdirectories will be made with the header value
             of the keys.
-        delimiter: str, optional
+
+        delimiter : str, optional
             The delimiter for the renaming.
-        archive_dir: path-like or None, optional
+
+        archive_dir : path-like or None, optional
             Where to move the original FITS file. If ``None``, the original file
             will remain there. Deleting original FITS is dangerous so it is only
             supported to move the files. You may delete files manually if
             needed.
         '''
-        def _guess_hwpangle(hdr, fpath):
+        def _guess_hwpangle(hdr, fpath, imagetyp):
             try:
+                # Best if OBJECT is [name_hwpangle] format.
                 hwpangle = float(hdr[KEYMAP["OBJECT"]].split('_')[-1])
                 if hwpangle > 180:
                     hwpangle = hwpangle / 10
+
             except ValueError:
-                hwpangle = input(
-                    f"{fpath.name}: HWP angle not found. Enter it (0, 22.5, 45, 67.5): ")
+                # If not so, set RET-ANG1 = 0.0 for non-object images
+                if imagetyp != "object":
+                    return 0.0
+
+                # Otherwise, get input.
+                else:
+                    hwpangle = input(
+                        f"{fpath.name}: HWP angle not found. Enter it (0, 22.5, 45, 67.5): ")
 
             return float(hwpangle)
 
-        _valid_hwpangs = [0, 0.0, 22.5, 45, 45.0, 67.5]
+        _valid_hwpangs = [0, 0.0, 22.5, 30, 30.0, 45, 45.0, 60, 60.0, 67.5]
         newpaths = []
         objpaths = []
         uselessdir = self.rawdir / "useless"
@@ -155,22 +170,30 @@ class Preprocessor():
                 continue
 
             cards = []
-            is_dummay = False
-            is_object = False
+            imagetyp = None
+            # is_dummay = False
+            # is_object = False
+            # is_flat = False
 
             # Do not rename useless flat/test images but move to useless directory.
             if (obj[:4].lower() == 'flat'):
+                imagetyp = "flat"
                 flatfor = obj[-1]
                 if flatfor == hdr[KEYMAP["FILTER"]]:
                     hdr[KEYMAP["OBJECT"]] = "flat"
                     cards.append(Card("FLATFOR", obj[-1],
                                       "The band for which the flat is taken"))
                 else:
-                    is_dummay = True
-            elif obj.lower() == "test":
-                is_dummay = True
+                    imagetyp = "useless"
 
-            if is_dummay:
+            elif obj.lower() in ["bias", "dark", "test"]:
+                imagetyp = obj.lower()
+
+            else:
+                imagetyp = "object"
+
+            # If useless, finish the loop here:
+            if imagetyp == "useless":
                 fpath.rename(uselessdir / fpath.name)
                 continue
 
@@ -188,7 +211,7 @@ class Preprocessor():
                 cards.append(Card("BUNIT", "ADU", "Pixel value unit"))
 
             # Calculate airmass by looking at the first 4 chars of OBJECT
-            if obj[:4].lower() not in ['bias', 'dark', 'test']:
+            if imagetyp in ["flat", "object"]:
                 # FYI: flat MAY require airmass just for check (twilight/night)
                 try:
                     am, full = airmass_hdr(hdr,
@@ -210,28 +233,45 @@ class Preprocessor():
                         print(
                             f"{fpath} failed in airmass calculation: ValueError")
                         print(am, full)
-                    pass
 
                 except KeyError:
                     if verbose:
                         print(f"{fpath} failed in airmass calculation: KeyError")
-                    pass
 
-                if obj[:4].lower() != "flat":
-                    is_object = True
+            # Deal with RET-ANG1
+            if imagetyp in ["object", "flat"] and "RET-ANG1" in hdr:
+                hwpangle_orig = hdr["RET-ANG1"]
+                # Correctly tune the RET-ANG1 to float
+                # (otherwise, it maybe understood as int...)
+                if hwpangle_orig in _valid_hwpangs:
+                    hdr["RET-ANG1"] = float(hdr["RET-ANG1"])
 
-            # Add polarimetry-key (RET-ANG1) if there is none:
-            if "RET-ANG1" not in hdr:
-                hwpangle = _guess_hwpangle(hdr, fpath)
+                # Sometimes it has, e.g., RET-ANG1 = "TIMEOUT" or 45.11,
+                # although TRIPOL computer tries not to make these exceptions.
+                else:
+                    while True:
+                        hwpangle = float(input(
+                            f"{fpath.name}: HWP angle is now {hwpangle_orig}. Enter correct value (0, 22.5, 45, 67.5): "))
+                        if hwpangle not in _valid_hwpangs:
+                            accept_novalid = input(
+                                "Your input is not a usual value. Still use? (y/n/?)")
+                            if str(accept_novalid) == 'y':
+                                break
+                            elif str(accept_novalid) == '?':
+                                print("Normally valid values:", _valid_hwpangs)
+                            elif str(accept_novalid) != 'n':
+                                continue
+                        else:
+                            break
+
+                    hdr["RET-ANG1"] = float(hwpangle)
+
+            else:
+                # In worst case (prior to 2019), we sometimes had to put hwp angle
+                # in the OBJECT after ``_``.
+                hwpangle = _guess_hwpangle(hdr, fpath, imagetyp)
                 cards.append(Card("RET-ANG1", float(hwpangle),
                                   "The half-wave plate angle."))
-
-            elif is_object and ((isinstance(hdr["RET-ANG1"], str))
-                                or (hdr["RET-ANG1"] not in _valid_hwpangs)):
-                hwpangle_orig = hdr["RET-ANG1"]
-                hwpangle = input(
-                    f"{fpath.name}: HWP angle is now {hwpangle_orig}. Enter correct value (0, 22.5, 45, 67.5): ")
-                hdr["RET-ANG1"] = float(hwpangle)
 
             add_hdr = fits.Header(cards)
 
@@ -247,7 +287,7 @@ class Preprocessor():
                                   verbose=verbose)
 
             newpaths.append(newpath)
-            if is_object:
+            if imagetyp == "object":
                 objpaths.append(newpath)
 
         # Save list of file paths for future use.
@@ -282,19 +322,31 @@ class Preprocessor():
         ''' Finds and make bias frames.
         Parameters
         ----------
-       savedir: path-like, optional
+       savedir : path-like, optional.
             The directory where the frames will be saved.
 
-        hdr_key, hdr_val: str or list of str
-            The header key and values to identify the bias frames. Some
-            combinations can be ``["OBJECT"]`` and ``["bias"]`` or
-            ``["OBJECT", "EXPTIME"]`` and ``["dark", 0.0]``.
+        hdr_key : str or list of str, optional
+            The header keys to be used for the identification of the bias
+            frames. Each value should correspond to the same-index element of
+            ``hdr_val``.
 
-        group_by: None, str or list str, optional
+        hdr_val : str, float, int or list of such, optional
+            The header key and values to identify the bias frames. Each value
+            should correspond to the same-index element of ``hdr_key``.
+
+        group_by : None, str or list str, optional.
             The header keywords to be used for grouping frames. For dark
             frames, usual choice can be ``['EXPTIME']``.
 
-        comb_kwargs: dict or None, optional
+        delimiter : str, optional.
+            The delimiter for the renaming.
+
+        dtype : str or numpy.dtype object, optional.
+            The data type you want for the final master bias frame. It is
+            recommended to use ``float32`` or ``int16`` if there is no
+            specific reason.
+
+        comb_kwargs: dict or None, optional.
             The parameters for ``combine_ccd``.
         '''
         self.initialize_self()
@@ -350,14 +402,20 @@ class Preprocessor():
                   group_by=["FILTER", "EXPTIME"], bias_grouped_by=["FILTER"],
                   exposure_key="EXPTIME", dtype='float32',
                   delimiter='_', comb_kwargs=MEDCOMB_KEYS):
-        """ Makes and saves bias and dark (bias NOT subtracted) images.
+        """ Makes and saves dark (bias subtracted) images.
         Parameters
         ----------
         savedir: path-like, optional
             The directory where the frames will be saved.
 
-        hdr_keys, hdr_vals: str or list of str
-            The header keyword and value to identify dark frames.
+        hdr_key : str or list of str, optional
+            The header keys to be used for the identification of the bias
+            frames. Each value should correspond to the same-index element of
+            ``hdr_val``.
+
+        hdr_val : str, float, int or list of such, optional
+            The header key and values to identify the bias frames. Each value
+            should correspond to the same-index element of ``hdr_key``.
 
         bias_sub: bool, optional
             If ``True``, subtracts bias from dark frames using self.biaspahts.
@@ -374,6 +432,14 @@ class Preprocessor():
             let the function know the exposure time of the frames, so that the
             miniimum exposure time frame will be used as bias. Default is
             "EXPTIME".
+
+        delimiter : str, optional.
+            The delimiter for the renaming.
+
+        dtype : str or numpy.dtype object, optional.
+            The data type you want for the final master bias frame. It is
+            recommended to use ``float32`` or ``int16`` if there is no
+            specific reason.
 
         comb_kwargs: dict or None, optional
             The parameters for ``combine_ccd``.
@@ -400,8 +466,8 @@ class Preprocessor():
                     "bias_grouped_by must be a subset of group_by for dark.")
 
         if exposure_key not in group_by:
-            warnings.warn("group_by is not None and does not include "
-                          + f"exposure_key = {exposure_key}. Forced to append.")
+            warn("group_by is not None and does not include "
+                 + f"exposure_key = {exposure_key}. Forced to append.")
             group_by.append(exposure_key)
 
         if savedir is None:
@@ -467,11 +533,48 @@ class Preprocessor():
                   dark_grouped_by=["FILTER", "EXPTIME"],
                   exposure_key="EXPTIME",
                   comb_kwargs=MEDCOMB_KEYS, delimiter='_', dtype='float32'):
-        '''
-        Flat image must have the header key ``flat_key`` *starting* with the
-        ``flat_startswith``. By default, it seeks for
-        ``OBJECT = flat_<FILTER>_<HWPANGLE>``.
+        '''Makes and saves flat images.
+        Parameters
+        ----------
+        savedir: path-like, optional
+            The directory where the frames will be saved.
 
+        hdr_key : str or list of str, optional
+            The header keys to be used for the identification of the bias
+            frames. Each value should correspond to the same-index element of
+            ``hdr_val``.
+
+        hdr_val : str, float, int or list of such, optional
+            The header key and values to identify the bias frames. Each value
+            should correspond to the same-index element of ``hdr_key``.
+
+        bias_sub, dark_sub : bool, optional
+            If ``True``, subtracts bias and dark frames using ``self.biaspahts``
+            and ``self.darkpaths``.
+
+        group_by: None, str or list str, optional
+            The header keywords to be used for grouping frames. For dark
+            frames, usual choice can be ``['EXPTIME']``.
+
+        bias_grouped_by, dark_grouped_by : str or list of str, optional
+            How the bias and dark frames are grouped by.
+
+        exposure_key: str, optional
+            If you want to make bias from a list of dark frames, you need to
+            let the function know the exposure time of the frames, so that the
+            miniimum exposure time frame will be used as bias. Default is
+            "EXPTIME".
+
+        comb_kwargs: dict or None, optional
+            The parameters for ``combine_ccd``.
+
+        delimiter : str, optional.
+            The delimiter for the renaming.
+
+        dtype : str or numpy.dtype object, optional.
+            The data type you want for the final master bias frame. It is
+            recommended to use ``float32`` or ``int16`` if there is no
+            specific reason.
         '''
 
         self.initialize_self()
@@ -543,13 +646,29 @@ class Preprocessor():
         self.flatpaths = savepaths
 
     def do_preproc(self, savedir=None, delimiter='_', dtype='float32',
-                   exposure_key="EXPTIME",
                    bias_grouped_by=["FILTER"],
                    dark_grouped_by=["FILTER", "EXPTIME"],
                    flat_grouped_by=["FILTER", "RET-ANG1"],
-                   do_crrej=False, verbose_crrej=False,
                    verbose_bdf=True, verbose_summary=False):
+        ''' Conduct the preprocessing using simplified ``bdf_process``.
+        Parameters
+        ----------
+        savedir: path-like, optional
+            The directory where the frames will be saved.
 
+        delimiter : str, optional.
+            The delimiter for the renaming.
+
+        dtype : str or numpy.dtype object, optional.
+            The data type you want for the final master bias frame. It is
+            recommended to use ``float32`` or ``int16`` if there is no
+            specific reason.
+
+        bias_grouped_by, dark_grouped_by : str or list of str, optional
+            How the bias, dark, and flat frames are grouped by.
+
+
+        '''
         self.initialize_self()
 
         for k in bias_grouped_by:
@@ -581,19 +700,19 @@ class Preprocessor():
                 biaspath = self.biaspaths[bias_vals]
             except (KeyError, TypeError):
                 biaspath = None
-                warnings.warn(f"Bias not available for", bias_vals)
+                warn(f"Bias not available for {bias_vals}")
 
             try:
                 darkpath = self.darkpaths[dark_vals]
             except (KeyError, TypeError):
                 darkpath = None
-                warnings.warn(f"Dark not available for", dark_vals)
+                warn(f"Dark not available for {dark_vals}")
 
             try:
                 flatpath = self.flatpaths[flat_vals]
             except (KeyError, TypeError):
                 flatpath = None
-                warnings.warn(f"Flat not available for", flat_vals)
+                warn(f"Flat not available for {flat_vals}")
 
             objccd = CCDData.read(fpath)
             _ = bdf_process(objccd,
@@ -602,9 +721,7 @@ class Preprocessor():
                             mbiaspath=biaspath,
                             mdarkpath=darkpath,
                             mflatpath=flatpath,
-                            do_crrej=do_crrej,
-                            verbose_bdf=verbose_bdf,
-                            verbose_crrej=verbose_crrej)
+                            verbose_bdf=verbose_bdf)
 
         self.reducedpaths = savepaths
 
