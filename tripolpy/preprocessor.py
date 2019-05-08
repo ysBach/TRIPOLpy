@@ -2,6 +2,7 @@ from warnings import warn
 from pathlib import Path
 from astropy.io import fits
 from astropy.io.fits import Card
+from astropy.io.fits.card import Undefined
 from astropy.table import Table
 from astropy.nddata import CCDData
 import pickle
@@ -239,7 +240,8 @@ class Preprocessor():
                         print(f"{fpath} failed in airmass calculation: KeyError")
 
             # Deal with RET-ANG1
-            if imagetyp in ["object", "flat"] and "RET-ANG1" in hdr:
+            if ((imagetyp in ["object", "flat"])
+                    and (not isinstance(hdr["RET-ANG1"], Undefined))):
                 hwpangle_orig = hdr["RET-ANG1"]
                 # Correctly tune the RET-ANG1 to float
                 # (otherwise, it maybe understood as int...)
@@ -265,13 +267,15 @@ class Preprocessor():
                             break
 
                     hdr["RET-ANG1"] = float(hwpangle)
+            elif isinstance(hdr["RET-ANG1"], Undefined):
+                hdr["RET-ANG1"] = None
 
-            else:
-                # In worst case (prior to 2019), we sometimes had to put hwp angle
-                # in the OBJECT after ``_``.
-                hwpangle = _guess_hwpangle(hdr, fpath, imagetyp)
-                cards.append(Card("RET-ANG1", float(hwpangle),
-                                  "The half-wave plate angle."))
+            # else:
+            #     # In worst case (prior to 2019), we sometimes had to put hwp angle
+            #     # in the OBJECT after ``_``.
+            #     hwpangle = _guess_hwpangle(hdr, fpath, imagetyp)
+            #     cards.append(Card("RET-ANG1", float(hwpangle),
+            #                       "The half-wave plate angle."))
 
             add_hdr = fits.Header(cards)
 
@@ -666,8 +670,6 @@ class Preprocessor():
 
         bias_grouped_by, dark_grouped_by : str or list of str, optional
             How the bias, dark, and flat frames are grouped by.
-
-
         '''
         self.initialize_self()
 
