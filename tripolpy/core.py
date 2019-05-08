@@ -943,7 +943,7 @@ def combine_ccd(fitslist, trim_fits_section=None, output=None, unit='adu',
     clip_extrema, minmax_clip, sigma_clip = _set_reject_method(reject_method)
 
     master = combine(img_list=ccdlist,
-                     combine_method=combine_method,
+                     method=combine_method,
                      clip_extrema=clip_extrema,
                      minmax_clip=minmax_clip,
                      sigma_clip=sigma_clip,
