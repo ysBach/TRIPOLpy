@@ -105,8 +105,8 @@ def imgpath(vals, delimiter='_', directory=None):
         imgname += str(val)
         imgname += str(delimiter)
 
-    lendel = len(delimiter)
-    imgname = imgname[:-lendel] + ".fits"
+    lend = len(delimiter)
+    imgname = imgname[:-lend] + ".fits"
 
     if directory is None:
         directory = '.'
